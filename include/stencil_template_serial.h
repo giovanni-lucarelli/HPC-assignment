@@ -1,8 +1,3 @@
-/* -*- Mode: C; c-basic-offset:4 ; indent-tabs-mode:nil ; -*- */
-/*
- * See COPYRIGHT in top-level directory.
- */
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,6 +7,7 @@
 #include <float.h>
 #include <math.h>
 
+// define indexes, in modern C, we could use enum
 
 #define NORTH 0
 #define SOUTH 1
@@ -27,76 +23,49 @@
 #define _x_ 0
 #define _y_ 1
 
-// ============================================================
-//
-// function prototypes
+/* --------------------------- Function prototypes -------------------------- */
 
-// TODO: comment line by line
-//       the functions in this file
+// initialize the simulation parameters, defines the CLI
+// and allocates the needed memory
+int initialize ( int, char **, int *, int *, int *,	int *, int **, double *, double **, int *, int * );
 
-int initialize ( 
-    int,
-	char **,
-	int *,
-	int *,
-	int *,
-	int *,
-	int **,
-	double *,
-	double **,
-    int *,
-    int *
-);
+// deallocate the allocated memory (in modern C will be the destructor)
+int memory_release ( double *, int * );
 
-int memory_release ( 
-    double *, 
-    int * 
-);
+extern int inject_energy ( const int, const int, const int *, const double, const int [2], double * );
+
+extern int update_plane ( const int, const int [2], const double *, double * );
+
+extern int get_total_energy( const int [2], const double *, double * );
 
 
-extern int inject_energy ( 
-    const int,
-    const int,
-	const int *,
-	const double,
-	const int [2],
-    double * 
-);
-
-extern int update_plane ( 
-    const int,
-    const int [2],
-    const double *,
-    double * );
-
-
-extern int get_total_energy( 
-    const int [2],
-    const double *,
-    double * 
-);
-
-
-// ============================================================
-//
-// function definition for inline functions
+/* ---------------------------- Inline functions ---------------------------- */
 
 inline int inject_energy ( 
-    const int       periodic,
-    const int       Nsources,
-	const int      *Sources,
-	const double    energy,
-	const int       mysize[2],
-    double         *plane 
+    const int       periodic,   // whether the boundaries are periodic
+    const int       Nsources,   // number of sources that will inject energy
+	const int      *Sources,    // array of 2*Nsources integers, each pair (x,y) is the
+                                // coordinate of a source. (even indexes are x, odd indexes are y)
+	const double    energy,     // how much energy each source injects at each injection
+                                // event
+	const int       mysize[2],  // the size of the local patch
+    double         *plane       // the plane where to inject the energy
 )
 {
+    // macro function to calculate the 1D index in the array from 2D coords
+    // assume that the plane has ghost cells
     #define IDX( i, j ) ( (j)*(mysize[_x_]+2) + (i) )
+
+    // TODO: why is mysize[_x_]+2  here and fxsize = size[_x_]+2 in update_plane???
+
     for (int s = 0; s < Nsources; s++) {
         
         int x = Sources[2*s];
         int y = Sources[2*s+1];
         plane[IDX(x, y)] += energy;
 
+        // manage case where source is at the boundary
+        // and the boundary is periodic
         if ( periodic )
             {
                 if ( x == 1 )
@@ -109,6 +78,7 @@ inline int inject_energy (
                     plane[IDX(x, 0)] += energy;
             }
     }
+
     #undef IDX
     
     return 0;
@@ -118,8 +88,8 @@ inline int inject_energy (
 inline int update_plane (
     const int     periodic,
     const int     size[2],
-    const double *old,
-    double       *new    
+    const double *old,  // the old plane should not be modified
+    double       *new   // only the new plane is updated 
 )
 /*
  * calculate the new energy values
@@ -131,12 +101,12 @@ inline int update_plane (
  *
  */
 {
-    const int register fxsize = size[_x_]+2;
+    const int register fxsize = size[_x_]+2;    // include ghost cells
     const int register fysize = size[_y_]+2;
-    const int register xsize = size[_x_];
+    const int register xsize = size[_x_];       // exclude ghost cells
     const int register ysize = size[_y_];
     
-   #define IDX( i, j ) ( (j)*fxsize + (i) )
+   #define IDX( i, j ) ( (j)*fxsize + (i) )     // macro to calculate the 1D index in the array from 2D coords
 
     // HINT: you may attempt to
     //       (i)  manually unroll the loop
@@ -149,17 +119,14 @@ inline int update_plane (
     for (int j = 1; j <= ysize; j++)
         for ( int i = 1; i <= xsize; i++)
             {
-                //
                 // five-points stencil formula
-                //
-
-                
+  
                 // simpler stencil with no explicit diffusivity
-                // always conserve the smoohed quantity
+                // always conserve the smoothed quantity
                 // alpha here mimics how much "easily" the heat
                 // travels
                 
-                double alpha = 0.6;
+                double alpha = 0.1;
                 double result = old[ IDX(i,j) ] *alpha;
                 double sum_i  = (old[IDX(i-1, j)] + old[IDX(i+1, j)]) / 4.0 * (1-alpha);
                 double sum_j  = (old[IDX(i, j-1)] + old[IDX(i, j+1)]) / 4.0 * (1-alpha);
@@ -209,8 +176,8 @@ inline int update_plane (
         {
             for ( int i = 1; i <= xsize; i++ )
                 {
-                    new[ i ] = new[ IDX(i, ysize) ];
-                    new[ IDX(i, ysize+1) ] = new[ i ];
+                    new[ IDX(i, 0) ]        = new[ IDX(i, ysize) ]; // halo basso  = ultima riga interna
+                    new[ IDX(i, ysize+1) ]  = new[ IDX(i, 1) ];     // halo alto   = prima riga interna
                 }
             for ( int j = 1; j <= ysize; j++ )
                 {
