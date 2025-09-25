@@ -69,6 +69,8 @@ int main(int argc, char **argv){
 		MPI_Comm_size(MPI_COMM_WORLD, &Ntasks);
 		MPI_Comm_dup (MPI_COMM_WORLD, &myCOMM_WORLD);
   	}
+
+	double init_t0 = MPI_Wtime();
   
 	/* argument checking and setting */
 	int ret = initialize ( &myCOMM_WORLD, Rank, Ntasks, argc, argv, 
@@ -87,10 +89,15 @@ int main(int argc, char **argv){
 		MPI_Finalize();
 		return 0;
 	}
+
+	double init_t1 = MPI_Wtime() - init_t0;
+
+	// declaring times
+	double comm_t1 = 0.0, comp_t1 = 0.0, comp_t0 = 0.0, comm_t0 = 0.0;
 	
 	
 	int current = OLD;
-	double t1 = MPI_Wtime();   /* take wall-clock time */
+	double total_t0 = MPI_Wtime();   /* take wall-clock time */
 	
 	for (int iter = 0; iter < Niterations; ++iter){
 
@@ -125,6 +132,8 @@ int main(int argc, char **argv){
 		//         --> can you overlap communication and compution in this way?
 
 		int r = 0;
+		double comm_t0 = MPI_Wtime();
+
 		// Post receives FIRST
 		// receive from north, send to south, west to east, east to west
 		MPI_Irecv(buffers[RECV][NORTH], Nx, MPI_DOUBLE, neighbours[NORTH], 100, myCOMM_WORLD, &reqs[r++]);
@@ -143,13 +152,17 @@ int main(int argc, char **argv){
 		// Wait all comms done
 		MPI_Waitall(r, reqs, MPI_STATUSES_IGNORE);
 		
+		comm_t1 = MPI_Wtime() - comm_t0;
 		// [C] copy the haloes data
 
 		// Columns received into temporary arrays -> write into halo columns
 		unpack_columns_recv(&planes[current], &buffers);
 
+		comp_t0 = MPI_Wtime();
 		// update grid points
 		update_plane( periodic, N, &planes[current], &planes[!current] );
+
+		comp_t1 = MPI_Wtime() - comp_t0;
 
 		// output if needed
 		if ( output_energy_stat_perstep )
@@ -157,8 +170,6 @@ int main(int argc, char **argv){
 
 		// char fname[64];
 		// sprintf(fname, "rank%03d_step%05d.bin", Rank, iter);
-
-		// dump(planes[!current].data, planes[!current].size, fname, NULL, NULL);
 
 		double *G = gather_global_plane(&planes[!current], Rank, Ntasks, N, S, myCOMM_WORLD);
 
@@ -172,13 +183,23 @@ int main(int argc, char **argv){
 		/* swap plane indexes for the new iteration */
 		current = !current;
 	}
-	
-	t1 = MPI_Wtime() - t1;
+
+	double total_t1 = MPI_Wtime() - total_t0;
 
 	output_energy_stat ( -1, &planes[!current], Niterations * Nsources*energy_per_source, Rank, &myCOMM_WORLD );
 	
 	memory_release( buffers, planes );
-	
+
+	// print all the times
+	printf("task %d total time: %f ( init %f )\n", Rank, total_t1, init_t1 );
+	printf("task %d communication time: %f\n", Rank, comm_t1);
+	printf("task %d computation time: %f\n", Rank, comp_t1);
+
+	// print time percentages
+	printf("task %d communication time percentage: %f %%\n", Rank, (comm_t1/total_t1)*100.0);
+	printf("task %d computation time percentage: %f %%\n", Rank, (comp_t1/total_t1)*100.0);
+	printf("task %d overhead time percentage: %f %%\n", Rank, ((total_t1 - comm_t1 - comp_t1)/total_t1)*100.0);
+
 	MPI_Finalize();
 	return 0;
 }
