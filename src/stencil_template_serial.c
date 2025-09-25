@@ -5,13 +5,6 @@
 
 #include "stencil_template_serial.h"
 
-typedef unsigned int uint;
-
-// function to dump the plane to a binary file
-// in a format that gnuplot/matplotlib can read
-// TODO: why is it here and not in the header???
-int dump ( const double *, const uint [2], const char *, double *, double * );
-
 int main(int argc, char **argv){
 
 	int  Niterations; // discrete time steps of dynamics
@@ -84,26 +77,6 @@ int main(int argc, char **argv){
 	return 0;
 }
 
-
-// TODO: what are these header comments???
-
-/* ==========================================================================
-   =                                                                        =
-   =   routines called within the integration loop                          =
-   ========================================================================== */
-
-
-/* ==========================================================================
-   =                                                                        =
-   =   initialization                                                       =
-   ========================================================================== */
-
-
-// TODO: why are these two functions not in the header???
-
-int memory_allocate ( const int [2], double ** );
-
-int initialize_sources( uint [2], int, int ** );
 
 int initialize ( 
 	int      argc,                // the argc from command line
@@ -201,8 +174,7 @@ int initialize (
 		}
 
 
-	// here we should check for all the parms being meaningful
-
+	// check for all the parms being meaningful
 	if ( S[_x_] < 1 || S[_y_] < 1 ){
 		fprintf(stderr, "Error: invalid grid size %d x %d\n", S[_x_], S[_y_] );
 		return 1;
@@ -234,8 +206,6 @@ int initialize (
 		fprintf(stderr, "Error: memory allocation failed\n");
 		return 10;
 	}
-
-	// --------------------------------------------------------------------------
 	
 	// randomly spread the heat sources
 	ret = initialize_sources( S, *Nsources, Sources );

@@ -1,9 +1,3 @@
-/* -*- Mode: C; c-basic-offset:4 ; indent-tabs-mode:nil ; -*- */
-/*
- * See COPYRIGHT in top-level directory.
- */
-
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -11,10 +5,10 @@
 #include <getopt.h>
 #include <time.h>
 #include <math.h>
+#include <float.h>
 
 #include <omp.h>
 #include <mpi.h>
-
 
 #define NORTH 0
 #define SOUTH 1
@@ -32,120 +26,97 @@
 
 typedef unsigned int uint;
 
-typedef uint    vec2_t[2];
+typedef uint vec2_t[2];
 typedef double *restrict buffers_t[4];
 
 typedef struct {
-    double   * restrict data;
+    double   *restrict data;
     vec2_t     size;
 } plane_t;
 
 
+/* ------------------------------- Declarations ------------------------------- */
+int initialize ( MPI_Comm *, int, int, int, char **, vec2_t *, vec2_t *, int *, int *, int *, int *, int *, int *, vec2_t **, double *, plane_t *, buffers_t * );
 
-extern int inject_energy ( const int      ,
-                           const int      ,
-			   const vec2_t  *,
-			   const double   ,
-                                 plane_t *,
-                           const vec2_t   );
+int memory_release ( buffers_t *buffers, plane_t *planes );
 
+extern int inject_energy ( const int, const int, const vec2_t  *, const double, plane_t *, const vec2_t );
 
-extern int update_plane ( const int      ,
-                          const vec2_t   ,
-                          const plane_t *,
-                                plane_t * );
+extern int update_plane ( const int, const vec2_t, const plane_t *, plane_t * );
 
+extern int get_total_energy( plane_t *, double  * );
 
-extern int get_total_energy( plane_t *,
-                             double  * );
+int output_energy_stat ( int, plane_t *, double, int, MPI_Comm * );
 
-int initialize ( MPI_Comm *,
-                 int       ,
-		 int       ,
-		 int       ,
-		 char    **,
-                 vec2_t   *,
-                 vec2_t   *,                 
-		 int      *,
-                 int      *,
-		 int      *,
-		 int      *,
-		 int      *,
-		 int      *,
-                 vec2_t  **,
-                 double   *,
-                 plane_t  *,
-                 buffers_t * );
+uint simple_factorization( uint, int *, uint ** );
 
+int initialize_sources( int, int , MPI_Comm  *, uint [2], int, int *, vec2_t ** );
 
-int memory_release (plane_t   * );
+int memory_allocate ( const int *, const vec2_t, buffers_t *, plane_t * );
 
+int dump ( const double *, const uint [2], const char *, double *, double * );
 
-int output_energy_stat ( int      ,
-                         plane_t *,
-                         double   ,
-                         int      ,
-                         MPI_Comm *);
+double* gather_global_plane(const plane_t *,
+                            int , int,
+                            const vec2_t ,   // process grid: N[_x_], N[_y_]
+                            const vec2_t ,   // global size: S[_x_], S[_y_]
+                            MPI_Comm);
 
+/* ---------------------------- Inline functions ---------------------------- */
 
-
-inline int inject_energy ( const int      periodic,
-                           const int      Nsources,
-			   const vec2_t  *Sources,
-			   const double   energy,
-                                 plane_t *plane,
-                           const vec2_t   N
-                           )
+inline int inject_energy ( 
+    const int periodic,
+    const int Nsources,
+	const vec2_t *Sources,
+	const double energy,
+    plane_t *plane,
+    const vec2_t N // this is the equivalent of mysize[2] in serial
+)
 {
     const uint register sizex = plane->size[_x_]+2;
-    double * restrict data = plane->data;
     
-   #define IDX( i, j ) ( (j)*sizex + (i) )
+    #define IDX( i, j ) ( (j)*sizex + (i) )
     for (int s = 0; s < Nsources; s++)
-        {
-            int x = Sources[s][_x_];
-            int y = Sources[s][_y_];
-            
-            data[ IDX(x,y) ] += energy;
-            
-            if ( periodic )
-                {
-                    if ( (N[_x_] == 1)  )
-                        {
-                            // propagate the boundaries if needed
-                            // check the serial version
-                        }
-                    
-                    if ( (N[_y_] == 1) )
-                        {
-                            // propagate the boundaries if needed
-                            // check the serial version
-                        }
-                }                
-        }
- #undef IDX
+    {
+        int x = Sources[s][_x_];
+        int y = Sources[s][_y_];
+        
+        plane->data[ IDX(x,y) ] += energy;
+        
+        if ( periodic ){
+            if ( x == 1){
+                // plane[IDX(N[_x_]+1, y)] += energy;
+                plane->data[IDX(N[_x_]+1, y)] += energy;
+            }
+            if ( x == N[_x_] ){
+                plane->data[IDX(0, y)] += energy;
+            }
+            if ( y == 1 ){
+                plane->data[IDX(x, N[_y_]+1)] += energy;
+            }
+            if ( y == N[_y_] ){
+                plane->data[IDX(x, 0)] += energy;
+            }
+        }                
+    }
+    #undef IDX
     
-  return 0;
+    return 0;
 }
-
-
-
-
-
-inline int update_plane ( const int      periodic, 
-                          const vec2_t   N,         // the grid of MPI tasks
-                          const plane_t *oldplane,
-                                plane_t *newplane
-                          )
     
+inline int update_plane ( 
+    const int periodic,
+    const vec2_t N,         // the grid of MPI tasks
+    const plane_t *oldplane,
+    plane_t *newplane
+)
 {
     uint register fxsize = oldplane->size[_x_]+2;
     uint register fysize = oldplane->size[_y_]+2;
-    
     uint register xsize = oldplane->size[_x_];
     uint register ysize = oldplane->size[_y_];
     
-   #define IDX( i, j ) ( (j)*fxsize + (i) )
+    #define IDX( i, j ) ( (j)*fxsize + (i) )
     
     // HINT: you may attempt to
     //       (i)  manually unroll the loop
@@ -158,51 +129,63 @@ inline int update_plane ( const int      periodic,
 
     double * restrict old = oldplane->data;
     double * restrict new = newplane->data;
+
+    // OpenMP parallelization
     
+    #pragma omp parallel for collapse(2) schedule(static)
     for (uint j = 1; j <= ysize; j++)
         for ( uint i = 1; i <= xsize; i++)
-            {
-                
-                // NOTE: (i-1,j), (i+1,j), (i,j-1) and (i,j+1) always exist even
-                //       if this patch is at some border without periodic conditions;
-                //       in that case it is assumed that the +-1 points are outside the
-                //       plate and always have a value of 0, i.e. they are an
-                //       "infinite sink" of heat
-                
-                // five-points stencil formula
-                //
-                // HINT : check the serial version for some optimization
-                //
-                new[ IDX(i,j) ] =
-                    old[ IDX(i,j) ] / 2.0 + ( old[IDX(i-1, j)] + old[IDX(i+1, j)] +
-                                              old[IDX(i, j-1)] + old[IDX(i, j+1)] ) /4.0 / 2.0;
-                
-            }
-
-    if ( periodic )
         {
-            if ( N[_x_] == 1 )
-                {
-                    // propagate the boundaries as needed
-                    // check the serial version
-                }
-  
-            if ( N[_y_] == 1 ) 
-                {
-                    // propagate the boundaries as needed
-                    // check the serial version
-                }
+            
+            // NOTE: (i-1,j), (i+1,j), (i,j-1) and (i,j+1) always exist even
+            //       if this patch is at some border without periodic conditions;
+            //       in that case it is assumed that the +-1 points are outside the
+            //       plate and always have a value of 0, i.e. they are an
+            //       "infinite sink" of heat
+            
+            // five-points stencil formula
+            //
+            // HINT : check the serial version for some optimization
+            //
+            new[ IDX(i,j) ] =
+                old[ IDX(i,j) ] / 2.0 + ( old[IDX(i-1, j)] + old[IDX(i+1, j)] +
+                                            old[IDX(i, j-1)] + old[IDX(i, j+1)] ) /4.0 / 2.0;
+            
         }
 
+    // if ( periodic )
+    // {
+    //     for ( int i = 1; i <= xsize; i++ )
+    //     {
+    //         new[ IDX(i, 0) ]        = new[ IDX(i, ysize) ]; // halo basso  = ultima riga interna
+    //         new[ IDX(i, ysize+1) ]  = new[ IDX(i, 1) ];     // halo alto   = prima riga interna
+    //     }
+    //     for ( int j = 1; j <= ysize; j++ )
+    //     {
+    //         new[ IDX( 0, j) ] = new[ IDX(xsize, j) ];
+    //         new[ IDX( xsize+1, j) ] = new[ IDX(1, j) ];
+    //     }
+    // }
+    if (periodic) {
+        if (N[_y_] == 1) { // periodicità verticale tutta dentro lo stesso rank
+            for (int i = 1; i <= xsize; ++i) {
+                new[IDX(i, 0)]        = new[IDX(i, ysize)];
+                new[IDX(i, ysize+1)]  = new[IDX(i, 1)];
+            }
+        }
+        if (N[_x_] == 1) { // periodicità orizzontale tutta dentro lo stesso rank
+            for (int j = 1; j <= ysize; ++j) {
+                new[IDX(0, j)]        = new[IDX(xsize, j)];
+                new[IDX(xsize+1, j)]  = new[IDX(1, j)];
+            }
+        }
+    }
     
- #undef IDX
-  return 0;
+    #undef IDX
+    return 0;
 }
 
-
-
-inline int get_total_energy( plane_t *plane,
-                             double  *energy )
+inline int get_total_energy( plane_t *plane, double *energy )
 /*
  * NOTE: this routine a good candiadate for openmp
  *       parallelization
@@ -215,13 +198,13 @@ inline int get_total_energy( plane_t *plane,
 
     double * restrict data = plane->data;
     
-   #define IDX( i, j ) ( (j)*fsize + (i) )
+    #define IDX( i, j ) ( (j)*fsize + (i) )
 
-   #if defined(LONG_ACCURACY)    
+    #if defined(LONG_ACCURACY)    
     long double totenergy = 0;
-   #else
+    #else
     double totenergy = 0;    
-   #endif
+    #endif
 
     // HINT: you may attempt to
     //       (i)  manually unroll the loop
@@ -232,8 +215,7 @@ inline int get_total_energy( plane_t *plane,
         for ( int i = 1; i <= xsize; i++ )
             totenergy += data[ IDX(i, j) ];
 
-    
-   #undef IDX
+    #undef IDX
 
     *energy = (double)totenergy;
     return 0;
