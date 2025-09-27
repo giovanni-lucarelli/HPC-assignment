@@ -5,30 +5,38 @@
 
 #include "stencil_template_parallel.h"
 
-static inline double *cell(double *base, int pitch, int i, int j) {
-	/* Return a pointer to cell (i,j) in a 2D array stored in row-major order. */
-    return base + j*pitch + i;
-}
+// static inline double *cell(double *base, int pitch, int i, int j) {
+// 	/* Return a pointer to cell (i,j) in a 2D array stored in row-major order. */
+//     return base + j*pitch + i;
+// }
 
-static inline void pack_columns_send(const plane_t *pl, buffers_t *bufs) {
-    double *base = pl->data;
-    const int Nx = (int)pl->size[_x_];
-    const int Ny = (int)pl->size[_y_];
-    const int pitch = Nx + 2;
+// static inline void pack_columns_send(const plane_t *pl, buffers_t *bufs) {
+//     double *base = pl->data;
+//     const int Nx = (int)pl->size[_x_];
+//     const int Ny = (int)pl->size[_y_];
+//     const int pitch = Nx + 2;
 
-    for (int j = 1; j <= Ny; ++j) bufs[SEND][WEST][j-1] = *(base + j*pitch + 1);
-    for (int j = 1; j <= Ny; ++j) bufs[SEND][EAST][j-1] = *(base + j*pitch + Nx);
-}
+//     if (bufs[SEND][WEST] != NULL){
+// 		for (int j = 1; j <= Ny; ++j) bufs[SEND][WEST][j-1] = *(base + j*pitch + 1);
+// 	}
+// 	if (bufs[SEND][EAST] != NULL){
+//     	for (int j = 1; j <= Ny; ++j) bufs[SEND][EAST][j-1] = *(base + j*pitch + Nx);
+// 	}
+// }
 
-static inline void unpack_columns_recv(plane_t *pl, const buffers_t *bufs) {
-    double *base = pl->data;
-    const int Nx = (int)pl->size[_x_];
-    const int Ny = (int)pl->size[_y_];
-    const int pitch = Nx + 2;
-
-    for (int j = 1; j <= Ny; ++j) *(base + j*pitch + 0)     = bufs[RECV][WEST][j-1];
-    for (int j = 1; j <= Ny; ++j) *(base + j*pitch + Nx+1 ) = bufs[RECV][EAST][j-1];
-}
+// static inline void unpack_columns_recv(plane_t *pl, const buffers_t *bufs) {
+//     double *base = pl->data;
+//     const int Nx = (int)pl->size[_x_];
+//     const int Ny = (int)pl->size[_y_];
+//     const int pitch = Nx + 2;
+	
+// 	if (bufs[SEND][WEST] != NULL){
+//     	for (int j = 1; j <= Ny; ++j) *(base + j*pitch + 0)     = bufs[RECV][WEST][j-1];
+// 	}
+// 	if (bufs[SEND][EAST] != NULL){
+//     	for (int j = 1; j <= Ny; ++j) *(base + j*pitch + Nx+1 ) = bufs[RECV][EAST][j-1];
+// 	}
+// }
 
 int main(int argc, char **argv){
 
@@ -39,6 +47,7 @@ int main(int argc, char **argv){
 	int  Niterations;
 	int  periodic;
 	vec2_t S, N;
+
 	
 	int      Nsources;
 	int      Nsources_local;
@@ -49,6 +58,13 @@ int main(int argc, char **argv){
 	buffers_t buffers[2];
 	
 	int output_energy_stat_perstep;
+
+	// const int Nx = (int)planes->size[_x_];
+    // const int Ny = (int)planes->size[_y_];
+
+	// declaring times
+	double comp_t = 0.0, comm_t = 0.0;
+	double init_t = MPI_Wtime();
 
   	// initialize MPI environment
   	{
@@ -69,17 +85,17 @@ int main(int argc, char **argv){
 		MPI_Comm_size(MPI_COMM_WORLD, &Ntasks);
 		MPI_Comm_dup (MPI_COMM_WORLD, &myCOMM_WORLD);
   	}
-
-	double init_t0 = MPI_Wtime();
+	
   
 	/* argument checking and setting */
-	int ret = initialize ( &myCOMM_WORLD, Rank, Ntasks, argc, argv, 
+	int ret = initialize ( &myCOMM_WORLD, 
+		Rank, // each rank will have its own subplane
+		Ntasks, argc, argv, 
 		&S, // the size of the global plane 
 		&N, // the size of the MPI tasks grid
 		&periodic, &output_energy_stat_perstep,
 		neighbours, &Niterations, &Nsources, &Nsources_local, &Sources_local, &energy_per_source, 
 		&planes[0], // planes in the current task (rank)
-		           // planes[0] is the "old" plane, planes[1] is the "new" plane
 		&buffers[0] );
 
 	if ( ret ){
@@ -90,14 +106,10 @@ int main(int argc, char **argv){
 		return 0;
 	}
 
-	double init_t1 = MPI_Wtime() - init_t0;
+	init_t = MPI_Wtime() - init_t;
 
-	// declaring times
-	double comm_t1 = 0.0, comp_t1 = 0.0, comp_t0 = 0.0, comm_t0 = 0.0;
-	
-	
 	int current = OLD;
-	double total_t0 = MPI_Wtime();   /* take wall-clock time */
+	double total_t = MPI_Wtime();   /* take wall-clock time */
 	
 	for (int iter = 0; iter < Niterations; ++iter){
 
@@ -108,6 +120,10 @@ int main(int argc, char **argv){
 
 		// [A] fill the buffers, and/or make the buffers' pointers pointing to the correct position
 
+		/* -------------------------------------------------------------------------- */
+		/*                             Filling the buffers                            */
+		/* -------------------------------------------------------------------------- */
+
 		// plane base and geometry
 		double *base = planes[current].data;
 		// const int Nx = (int)N[_x_], Ny = (int)N[_y_];
@@ -117,52 +133,115 @@ int main(int argc, char **argv){
 		const int pitch = Nx + 2;
 
 		// ROW buffers: point directly into plane (no copy)
-		buffers[SEND][NORTH] = cell(base, pitch, 1, 1);        // first interior row
-		buffers[RECV][NORTH] = cell(base, pitch, 1, 0);        // north halo
+		// NORTH
+		if (neighbours[NORTH] != MPI_PROC_NULL) {
+			buffers[SEND][NORTH] = base + 1*pitch + 1;   // riga interna j=1
+			buffers[RECV][NORTH] = base + 0*pitch + 1;   // halo j=0
+		}
+		// SOUTH
+		if (neighbours[SOUTH] != MPI_PROC_NULL) {
+			buffers[SEND][SOUTH] = base + Ny*pitch + 1;      // riga interna j=Ny
+			buffers[RECV][SOUTH] = base + (Ny+1)*pitch + 1;  // halo j=Ny+1
+		}
+		
+		if (neighbours[WEST] != MPI_PROC_NULL) {
+			for (int j = 1; j <= Ny; ++j)
+				buffers[SEND][WEST][j-1] = *(base + j*pitch + 1);
+		}
+		// EAST: prendo i=Nx -> impacchetto in buffers[SEND][EAST][0..Ny-1]
+		if (neighbours[EAST] != MPI_PROC_NULL) {
+			for (int j = 1; j <= Ny; ++j)
+				buffers[SEND][EAST][j-1] = *(base + j*pitch + Nx);
+		}
 
-		buffers[SEND][SOUTH] = cell(base, pitch, 1, Ny);       // last interior row
-		buffers[RECV][SOUTH] = cell(base, pitch, 1, Ny+1);     // south halo
-
-		// COLUMN buffers: pack into allocated contiguous arrays
-		pack_columns_send(&planes[current], &buffers);
-
+		
+		/* -------------------------------------------------------------------------- */
+		/*                                Comunication                                */
+		/* -------------------------------------------------------------------------- */
+		
 		// [B] perform the halo communications
 		//     (1) use Send / Recv
 		//     (2) use Isend / Irecv
 		//         --> can you overlap communication and compution in this way?
+		
+		
+		#define TAG_N_TO_S  10
+		#define TAG_S_TO_N  11
+		#define TAG_W_TO_E  12
+		#define TAG_E_TO_W  13
 
 		int r = 0;
-		double comm_t0 = MPI_Wtime();
 
-		// Post receives FIRST
-		// receive from north, send to south, west to east, east to west
-		MPI_Irecv(buffers[RECV][NORTH], Nx, MPI_DOUBLE, neighbours[NORTH], 100, myCOMM_WORLD, &reqs[r++]);
-		MPI_Irecv(buffers[RECV][SOUTH], Nx, MPI_DOUBLE, neighbours[SOUTH], 101, myCOMM_WORLD, &reqs[r++]);
-		MPI_Irecv(buffers[RECV][WEST],  Ny, MPI_DOUBLE, neighbours[WEST],  102, myCOMM_WORLD, &reqs[r++]);
-		MPI_Irecv(buffers[RECV][EAST],  Ny, MPI_DOUBLE, neighbours[EAST],  103, myCOMM_WORLD, &reqs[r++]);
+		// --- NORTH: ricevo dalla mia NORTH halo ciò che il vicino NORTH invia con S_TO_N
+		if (neighbours[NORTH] != MPI_PROC_NULL) {
+			if (neighbours[NORTH] == Rank) {
+				for (int i=0;i<Nx;i++) buffers[RECV][NORTH][i] = buffers[SEND][NORTH][i];
+			} else {
+				MPI_Irecv(buffers[RECV][NORTH], Nx, MPI_DOUBLE, neighbours[NORTH], TAG_S_TO_N, myCOMM_WORLD, &reqs[r++]);
+				MPI_Isend(buffers[SEND][NORTH], Nx, MPI_DOUBLE, neighbours[NORTH], TAG_N_TO_S, myCOMM_WORLD, &reqs[r++]);
+			}
+		}
 
-		// Then sends
-		MPI_Isend(buffers[SEND][NORTH], Nx, MPI_DOUBLE, neighbours[NORTH], 101, myCOMM_WORLD, &reqs[r++]);
-		MPI_Isend(buffers[SEND][SOUTH], Nx, MPI_DOUBLE, neighbours[SOUTH], 100, myCOMM_WORLD, &reqs[r++]);
-		MPI_Isend(buffers[SEND][WEST],  Ny, MPI_DOUBLE, neighbours[WEST],  103, myCOMM_WORLD, &reqs[r++]);
-		MPI_Isend(buffers[SEND][EAST],  Ny, MPI_DOUBLE, neighbours[EAST],  102, myCOMM_WORLD, &reqs[r++]);
+		// --- SOUTH: ricevo dal vicino SOUTH ciò che lui manda con N_TO_S
+		if (neighbours[SOUTH] != MPI_PROC_NULL) {
+			if (neighbours[SOUTH] == Rank) {
+				for (int i=0;i<Nx;i++) buffers[RECV][SOUTH][i] = buffers[SEND][SOUTH][i];
+			} else {
+				MPI_Irecv(buffers[RECV][SOUTH], Nx, MPI_DOUBLE, neighbours[SOUTH], TAG_N_TO_S, myCOMM_WORLD, &reqs[r++]);
+				MPI_Isend(buffers[SEND][SOUTH], Nx, MPI_DOUBLE, neighbours[SOUTH], TAG_S_TO_N, myCOMM_WORLD, &reqs[r++]);
+			}
+		}
+
+		// --- WEST: ricevo dal WEST ciò che lui manda con E_TO_W; io mando al WEST con W_TO_E
+		if (neighbours[WEST] != MPI_PROC_NULL) {
+			if (neighbours[WEST] == Rank) {
+				for (int j=0;j<Ny;j++) buffers[RECV][WEST][j] = buffers[SEND][WEST][j];
+			} else {
+				MPI_Irecv(buffers[RECV][WEST], Ny, MPI_DOUBLE, neighbours[WEST], TAG_E_TO_W, myCOMM_WORLD, &reqs[r++]);
+				MPI_Isend(buffers[SEND][WEST], Ny, MPI_DOUBLE, neighbours[WEST], TAG_W_TO_E, myCOMM_WORLD, &reqs[r++]);
+			}
+		}
+
+		// --- EAST: ricevo dall’EAST ciò che lui manda con W_TO_E; io mando all’EAST con E_TO_W
+		if (neighbours[EAST] != MPI_PROC_NULL) {
+			if (neighbours[EAST] == Rank) {
+				for (int j=0;j<Ny;j++) buffers[RECV][EAST][j] = buffers[SEND][EAST][j];
+			} else {
+				MPI_Irecv(buffers[RECV][EAST], Ny, MPI_DOUBLE, neighbours[EAST], TAG_W_TO_E, myCOMM_WORLD, &reqs[r++]);
+				MPI_Isend(buffers[SEND][EAST], Ny, MPI_DOUBLE, neighbours[EAST], TAG_E_TO_W, myCOMM_WORLD, &reqs[r++]);
+			}
+		}
+
+
 
 		// Optional overlap: here we could update only interior cells (i=2..Nx-1, j=2..Ny-1)
 
 		// Wait all comms done
 		MPI_Waitall(r, reqs, MPI_STATUSES_IGNORE);
-		
-		comm_t1 = MPI_Wtime() - comm_t0;
+
+		comm_t = MPI_Wtime() - comm_t;
+
+		/* -------------------------------------------------------------------------- */
+		/*                                  Unpacking                                 */
+		/* -------------------------------------------------------------------------- */
+
 		// [C] copy the haloes data
 
 		// Columns received into temporary arrays -> write into halo columns
-		unpack_columns_recv(&planes[current], &buffers);
+		if (neighbours[WEST] != MPI_PROC_NULL) {
+			for (int j = 1; j <= Ny; ++j)
+				*(base + j*pitch + 0) = buffers[RECV][WEST][j-1];      // halo i=0
+		}
+		if (neighbours[EAST] != MPI_PROC_NULL) {
+			for (int j = 1; j <= Ny; ++j)
+				*(base + j*pitch + (Nx+1)) = buffers[RECV][EAST][j-1];  // halo i=Nx+1
+		}
 
-		comp_t0 = MPI_Wtime();
+		comp_t = MPI_Wtime();
 		// update grid points
 		update_plane( periodic, N, &planes[current], &planes[!current] );
 
-		comp_t1 = MPI_Wtime() - comp_t0;
+		comp_t = MPI_Wtime() - comp_t;
 
 		// output if needed
 		if ( output_energy_stat_perstep )
@@ -184,21 +263,41 @@ int main(int argc, char **argv){
 		current = !current;
 	}
 
-	double total_t1 = MPI_Wtime() - total_t0;
+	total_t = MPI_Wtime() - total_t;
 
 	output_energy_stat ( -1, &planes[!current], Niterations * Nsources*energy_per_source, Rank, &myCOMM_WORLD );
 	
 	memory_release( buffers, planes );
 
-	// print all the times
-	printf("task %d total time: %f ( init %f )\n", Rank, total_t1, init_t1 );
-	printf("task %d communication time: %f\n", Rank, comm_t1);
-	printf("task %d computation time: %f\n", Rank, comp_t1);
+	// reduce the times among the processes
+	// max
+	double max_total_t = 0;
+	MPI_Reduce ( &total_t, &max_total_t, 1, MPI_DOUBLE, MPI_MAX, 0, myCOMM_WORLD );
 
-	// print time percentages
-	printf("task %d communication time percentage: %f %%\n", Rank, (comm_t1/total_t1)*100.0);
-	printf("task %d computation time percentage: %f %%\n", Rank, (comp_t1/total_t1)*100.0);
-	printf("task %d overhead time percentage: %f %%\n", Rank, ((total_t1 - comm_t1 - comp_t1)/total_t1)*100.0);
+	double max_comp_t = 0;
+	MPI_Reduce ( &comp_t, &max_comp_t, 1, MPI_DOUBLE, MPI_MAX, 0, myCOMM_WORLD );
+
+	double max_comm_t = 0;
+	MPI_Reduce ( &comm_t, &max_comm_t, 1, MPI_DOUBLE, MPI_MAX, 0, myCOMM_WORLD );
+
+
+	if (Rank ==0 ){
+		// print all the times
+		printf("task %d total time: %f ( init %f )\n", Rank, total_t, init_t );
+		printf("task %d communication time: %f\n", Rank, comm_t);
+		printf("task %d computation time: %f\n", Rank, comp_t);
+
+		// print time percentages
+		printf("task %d communication time percentage: %f %%\n", Rank, (comm_t/total_t)*100.0);
+		printf("task %d computation time percentage: %f %%\n", Rank, (comp_t/total_t)*100.0);
+		printf("task %d overhead time percentage: %f %%\n", Rank, ((total_t - comm_t - comp_t)/total_t)*100.0);
+
+		// print global values
+		printf("max total time: %f\n", max_total_t);
+		printf("max communication time: %f\n", max_comm_t);
+		printf("max computation time: %f\n", max_comp_t);
+
+	}
 
 	MPI_Finalize();
 	return 0;

@@ -28,8 +28,8 @@ run_serial: $(TARGET)
 # run parallelo (MPI + OpenMP)
 run_mpi: $(TARGET)
 	mkdir -p $(OUT_DIR)
-	export OMP_NUM_THREADS=3; \
-	mpirun -np 4 ./$(TARGET) -x 256 -y 256 -e 3 -E 500 -n 500 -p 1 -v 1 -o 1
+	export OMP_NUM_THREADS=3;\
+	mpirun -np 4 ./$(TARGET) -x 256 -y 256 -e 3 -E 50 -n 500 -p 0
 	mv -f *.bin $(OUT_DIR)/
 
 clean:

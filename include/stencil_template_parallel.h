@@ -67,42 +67,42 @@ double* gather_global_plane(const plane_t *,
 inline int inject_energy ( 
     const int periodic,
     const int Nsources,
-	const vec2_t *Sources,
-	const double energy,
+    const vec2_t *Sources,
+    const double energy,
     plane_t *plane,
-    const vec2_t N // this is the equivalent of mysize[2] in serial
+    const vec2_t Nproc   // griglia di processi: Nproc[_x_], Nproc[_y_]
 )
 {
-    const uint register sizex = plane->size[_x_]+2;
-    
-    #define IDX( i, j ) ( (j)*sizex + (i) )
-    for (int s = 0; s < Nsources; s++)
-    {
-        int x = Sources[s][_x_];
-        int y = Sources[s][_y_];
-        
-        plane->data[ IDX(x,y) ] += energy;
-        
-        if ( periodic ){
-            if ( x == 1){
-                // plane[IDX(N[_x_]+1, y)] += energy;
-                plane->data[IDX(N[_x_]+1, y)] += energy;
+    const int Nx = (int)plane->size[_x_];
+    const int Ny = (int)plane->size[_y_];
+    const int pitch = Nx + 2;
+    double * restrict data = plane->data;
+
+    #define IDX(i,j) ((j)*pitch + (i))
+
+    for (int s = 0; s < Nsources; s++) {
+        int x = (int)Sources[s][_x_]; // 1..Nx
+        int y = (int)Sources[s][_y_]; // 1..Ny
+
+        data[ IDX(x,y) ] += energy;
+
+        if (periodic) {
+            // copia periodica solo se tutta la direzione sta nello stesso rank
+            if (Nproc[_x_] == 1) {
+                if (x == 1)   data[ IDX(Nx+1, y) ] += energy; // halo destro
+                if (x == Nx)  data[ IDX(0,    y) ] += energy; // halo sinistro
             }
-            if ( x == N[_x_] ){
-                plane->data[IDX(0, y)] += energy;
+            if (Nproc[_y_] == 1) {
+                if (y == 1)   data[ IDX(x, Ny+1) ] += energy; // halo alto
+                if (y == Ny)  data[ IDX(x, 0   ) ] += energy; // halo basso
             }
-            if ( y == 1 ){
-                plane->data[IDX(x, N[_y_]+1)] += energy;
-            }
-            if ( y == N[_y_] ){
-                plane->data[IDX(x, 0)] += energy;
-            }
-        }                
+        }
     }
+
     #undef IDX
-    
     return 0;
 }
+
     
 inline int update_plane ( 
     const int periodic,
