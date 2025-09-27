@@ -2,3 +2,4 @@
 output_parallel/
 output_serial/
 *.bin
+stencil_mpi

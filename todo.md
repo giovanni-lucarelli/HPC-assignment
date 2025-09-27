@@ -1,1 +1,2 @@
-- [ ] bug nel caso non periodico: se non c'è il vicino, non si deve fare né pack né unpack delle colonne, nessuna comunicazione.
+- [x] bug nel caso non periodico: se non c'è il vicino, non si deve fare né pack né unpack delle colonne, nessuna comunicazione.
+- [ ] sistemare bug su come prendo i tempi (barrier e accumulazione)
