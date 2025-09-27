@@ -1,3 +1,4 @@
 .vscode/
-.output*/
-
+output_parallel/
+output_serial/
+*.bin
