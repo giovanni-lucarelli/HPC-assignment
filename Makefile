@@ -1,36 +1,46 @@
-# Compilatore MPI + OpenMP
-CC = mpicc
-CFLAGS = -O3 -Wall -fopenmp
-TARGET = stencil_mpi
+# -------- Build config --------
+CC      = mpicc
+CFLAGS  = -O3 -Wall -fopenmp
+TARGET  = stencil_mpi
 
-# directory
-SRC_DIR = src
+# Set ENABLE_OUTPUT=1 to compile with ENABLE_OUTPUT preprocessor flag
+ENABLE_OUTPUT ?= 1
+
+# -------- Paths --------
+SRC_DIR     = src
 INCLUDE_DIR = include
-OUT_DIR = output_parallel
+OUT_DIR     = output_parallel
 
-# sorgenti e header
+# -------- Sources --------
 SRC = $(SRC_DIR)/stencil_template_parallel.c
 INC = $(INCLUDE_DIR)/stencil_template_parallel.h
+
+# If enabled, add the CPP flag
+ifeq ($(ENABLE_OUTPUT),1)
+  CFLAGS += -DENABLE_OUTPUT
+  POST_RUN = mkdir -p $(OUT_DIR); mv -f *.bin $(OUT_DIR)/
+else
+  POST_RUN = @true
+endif
+
+.PHONY: all clean run_serial run_mpi
 
 all: $(TARGET)
 
 $(TARGET): $(SRC) $(INC)
 	$(CC) $(CFLAGS) -I$(INCLUDE_DIR) -o $@ $(SRC) -lm
 
-# --- Esecuzioni ---
+# --- Runs ---
 
-# run seriale (1 processo MPI)
+# serial run (1 MPI rank)
 run_serial: $(TARGET)
-	mkdir -p $(OUT_DIR)
-	./$(TARGET) -x 256 -y 256 -n 100 -o 1
-	mv -f *.bin $(OUT_DIR)/
+	./$(TARGET) -x 256 -y 256 -n 300 -p 1 -o 1
+	$(POST_RUN)
 
-# run parallelo (MPI + OpenMP)
+# parallel run (MPI + OpenMP)
 run_mpi: $(TARGET)
-	mkdir -p $(OUT_DIR)
-	export OMP_NUM_THREADS=3;\
-	mpirun -np 4 ./$(TARGET) -x 256 -y 256 -e 3 -E 50 -n 500 -p 0
-	mv -f *.bin $(OUT_DIR)/
+	OMP_NUM_THREADS=3 mpirun -np 4 ./$(TARGET) -x 512 -y 512 -e 3 -E 50 -n 250 -p 1 -o 1
+	$(POST_RUN)
 
 clean:
 	rm -f $(TARGET) *.bin

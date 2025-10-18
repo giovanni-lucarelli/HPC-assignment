@@ -1,0 +1,102 @@
+\section{Introduction}
+\begin{frame}{Goals}
+    \begin{enumerate}
+        \item \textbf{Optimize} the stencil method for the 2d heat equation
+        \item \textbf{Parallelize} using hybrid approach
+        \item Perform \textbf{scalability} study:
+        \begin{enumerate}
+            \item Thread scaling
+            \item Strong scaling
+            \item Weak scaling
+        \end{enumerate}
+    \end{enumerate}
+\end{frame}
+
+\begin{frame}{Algorithm}
+    \textbf{Heat equation (2d)}
+
+    \begin{equation*}
+        \partial_t u = \alpha (\partial_x^2 u + \partial_y^2 u)
+    \end{equation*}
+
+    \textbf{Finite difference integration}
+    \begin{equation*}
+        u^{(t+1)}_{i,j} = (1 -4\alpha)u^{(t)}_{i,j} + \alpha \sum_{\langle i,j\rangle} u^{(t)}_{i,j}
+    \end{equation*}
+    \centering
+    $x\in[0,L_x]\rightarrow i \in \{1,\dots, N_x-1\}$\\
+    $y\in[0,L_y]\rightarrow j \in \{1,\dots, N_y-1\}$
+    
+\end{frame}
+
+\begin{frame}{Code Correctness}
+    \begin{figure}
+    \centering{
+        \resizebox{\linewidth}{!}{\input{images/evolution.pgf}}
+    }
+\end{figure}
+\end{frame}
+
+\begin{frame}{Optimization}
+    \begin{itemize}
+        \item Compiler flags:\\ \texttt{-O3 -Wall -march=native}
+        \item Preprocessor directive:\\ \texttt{\#pragma GCC unroll}
+    \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Parallelization: shared memory}
+
+    Implementation
+    \begin{lstlisting}
+    #pragma omp parallel for schedule(static)
+    for (uint j = 1; j <= ysize; j++){
+        for ( uint i = 1; i <= xsize; i++){
+
+            // update rule
+
+        }
+    }
+    \end{lstlisting}
+    \vfill
+    Thread placement and affinity
+    \begin{lstlisting}
+    export OMP_PLACES=cores
+    export OMP_PROC_BIND=close
+    \end{lstlisting}
+
+\end{frame}
+
+\begin{frame}{Parallelization: distributed memory}
+    \begin{figure}
+        \includegraphics[width=\textwidth]{./images/send-recv.drawio (1).pdf}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{Parallelization: distributed memory}
+    \begin{figure}
+        \includegraphics[width=\textwidth]{./images/send-recv.drawio (2).pdf}
+    \end{figure}
+\end{frame}
+
+\begin{frame}[fragile]{Parallelization: distributed memory}
+
+    For each task:\vfill
+    \begin{lstlisting}
+    // pack buffers
+
+    MPI_Irecv(...);
+	
+    MPI_Isend(...);
+
+    update_internal();
+
+    MPI_Waitall();
+
+    // unpack buffers
+
+    update_border();
+    \end{lstlisting}
+
+\end{frame}
+
+

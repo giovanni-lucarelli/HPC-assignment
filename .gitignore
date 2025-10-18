@@ -3,3 +3,12 @@ output_parallel/
 output_serial/
 *.bin
 stencil_mpi
+
+*.nav
+*.log
+*.aux
+*.snm
+*.vrb
+*.toc
+*.out
+*.gz

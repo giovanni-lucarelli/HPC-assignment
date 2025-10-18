@@ -36,7 +36,7 @@ typedef struct {
 
 
 /* ------------------------------- Declarations ------------------------------- */
-int initialize ( MPI_Comm *, int, int, int, char **, vec2_t *, vec2_t *, int *, int *, int *, int *, int *, int *, vec2_t **, double *, plane_t *, buffers_t * );
+int initialize ( MPI_Comm *, int, int, int, char **, vec2_t *, vec2_t *, int *, int *, uint *, int *, int *, int *, vec2_t **, double *, plane_t *, buffers_t * );
 
 int memory_release ( buffers_t *buffers, plane_t *planes );
 
@@ -52,7 +52,7 @@ uint simple_factorization( uint, int *, uint ** );
 
 int initialize_sources( int, int , MPI_Comm  *, uint [2], int, int *, vec2_t ** );
 
-int memory_allocate ( const int *, const vec2_t, buffers_t *, plane_t * );
+int memory_allocate ( const uint *, const vec2_t, buffers_t *, plane_t * );
 
 int dump ( const double *, const uint [2], const char *, double *, double * );
 
@@ -61,6 +61,8 @@ double* gather_global_plane(const plane_t *,
                             const vec2_t ,   // process grid: N[_x_], N[_y_]
                             const vec2_t ,   // global size: S[_x_], S[_y_]
                             MPI_Comm);
+
+int dump_global(const double *, int , int , const char *, double *, double *);
 
 /* ---------------------------- Inline functions ---------------------------- */
 
@@ -112,60 +114,129 @@ inline int update_plane (
 )
 {
     uint register fxsize = oldplane->size[_x_]+2;
-    uint register fysize = oldplane->size[_y_]+2;
+    // uint register fysize = oldplane->size[_y_]+2;
     uint register xsize = oldplane->size[_x_];
     uint register ysize = oldplane->size[_y_];
     
     #define IDX( i, j ) ( (j)*fxsize + (i) )
-    
-    // HINT: you may attempt to
-    //       (i)  manually unroll the loop
-    //       (ii) ask the compiler to do it
-    // for instance
-    // #pragma GCC unroll 4
-    //
-    // HINT: in any case, this loop is a good candidate
-    //       for openmp parallelization
 
     double * restrict old = oldplane->data;
     double * restrict new = newplane->data;
 
     // OpenMP parallelization
-    
-    #pragma omp parallel for collapse(2) schedule(static)
+    #pragma omp parallel for schedule(static)
     for (uint j = 1; j <= ysize; j++)
         for ( uint i = 1; i <= xsize; i++)
         {
-            
-            // NOTE: (i-1,j), (i+1,j), (i,j-1) and (i,j+1) always exist even
-            //       if this patch is at some border without periodic conditions;
-            //       in that case it is assumed that the +-1 points are outside the
-            //       plate and always have a value of 0, i.e. they are an
-            //       "infinite sink" of heat
-            
-            // five-points stencil formula
-            //
-            // HINT : check the serial version for some optimization
-            //
+
             new[ IDX(i,j) ] =
                 old[ IDX(i,j) ] / 2.0 + ( old[IDX(i-1, j)] + old[IDX(i+1, j)] +
                                             old[IDX(i, j-1)] + old[IDX(i, j+1)] ) /4.0 / 2.0;
             
         }
 
-    // if ( periodic )
-    // {
-    //     for ( int i = 1; i <= xsize; i++ )
-    //     {
-    //         new[ IDX(i, 0) ]        = new[ IDX(i, ysize) ]; // halo basso  = ultima riga interna
-    //         new[ IDX(i, ysize+1) ]  = new[ IDX(i, 1) ];     // halo alto   = prima riga interna
-    //     }
-    //     for ( int j = 1; j <= ysize; j++ )
-    //     {
-    //         new[ IDX( 0, j) ] = new[ IDX(xsize, j) ];
-    //         new[ IDX( xsize+1, j) ] = new[ IDX(1, j) ];
-    //     }
-    // }
+    if (periodic) {
+        if (N[_y_] == 1) { // periodicità verticale tutta dentro lo stesso rank
+            for (int i = 1; i <= xsize; ++i) {
+                new[IDX(i, 0)]        = new[IDX(i, ysize)];
+                new[IDX(i, ysize+1)]  = new[IDX(i, 1)];
+            }
+        }
+        if (N[_x_] == 1) { // periodicità orizzontale tutta dentro lo stesso rank
+            for (int j = 1; j <= ysize; ++j) {
+                new[IDX(0, j)]        = new[IDX(xsize, j)];
+                new[IDX(xsize+1, j)]  = new[IDX(1, j)];
+            }
+        }
+    }
+    
+    #undef IDX
+    return 0;
+}
+
+inline int update_internal ( 
+    const vec2_t N,         // the grid of MPI tasks
+    const plane_t *oldplane,
+    plane_t *newplane
+)
+{
+    uint register fxsize = oldplane->size[_x_]+2;
+    uint register xsize = oldplane->size[_x_];
+    uint register ysize = oldplane->size[_y_];
+    
+    #define IDX( i, j ) ( (j)*fxsize + (i) )
+
+    double * restrict old = oldplane->data;
+    double * restrict new = newplane->data;
+
+    // OpenMP parallelization
+    #pragma omp parallel for schedule(static)
+    for (uint j = 2; j <= ysize-1; j++)
+        for ( uint i = 2; i <= xsize-1; i++)
+        {
+
+            new[ IDX(i,j) ] =
+                old[ IDX(i,j) ] / 2.0 + ( old[IDX(i-1, j)] + old[IDX(i+1, j)] +
+                                            old[IDX(i, j-1)] + old[IDX(i, j+1)] ) /4.0 / 2.0;
+            
+        }
+    
+    #undef IDX
+    return 0;
+}
+
+inline int update_boundary ( 
+    const int periodic,
+    const vec2_t N,         // the grid of MPI tasks
+    const plane_t *oldplane,
+    plane_t *newplane
+)
+{
+    uint register fxsize = oldplane->size[_x_]+2;
+    uint register xsize = oldplane->size[_x_];
+    uint register ysize = oldplane->size[_y_];
+    
+    #define IDX( i, j ) ( (j)*fxsize + (i) )
+
+    double * restrict old = oldplane->data;
+    double * restrict new = newplane->data;
+
+    const double alpha = 0.5;
+    const double constant =  (1-alpha) / 4.0;
+
+    double center, neighbors;
+
+    // update top and bottom edges
+    // do not update the corners here
+    #pragma omp parallel for schedule(static)
+    for (uint i = 2; i <= xsize-1; i++){
+        // top edge
+        center = old[ IDX(i,1) ];
+        neighbors = old[IDX(i-1, 1)] + old[IDX(i+1, 1)] +
+                    old[IDX(i, 0)] + old[IDX(i, 2)];
+        new[ IDX(i,1) ] = center * alpha + neighbors * constant;
+
+        // bottom edge
+        center = old[ IDX(i,ysize) ];
+        neighbors = old[IDX(i-1, ysize)] + old[IDX(i+1, ysize)] + old[IDX(i, ysize-1)] + old[IDX(i, ysize+1)];
+        new[ IDX(i,ysize) ] = center * alpha + neighbors * constant;
+    }
+
+    // update left and right edges
+    // update the corners here
+    #pragma omp parallel for schedule(static)
+    for (uint j = 1; j <= ysize; j++){
+        // left edge
+        center = old[ IDX(1,j) ];
+        neighbors = old[IDX(0, j)] + old[IDX(2, j)] + old[IDX(1, j-1)] + old[IDX(1, j+1)];
+        new[ IDX(1,j) ] = center * alpha + neighbors * constant;
+        // right edge
+        center = old[ IDX(xsize,j) ];
+        neighbors = old[IDX(xsize-1, j)] + old[IDX(xsize+1, j)] + old[IDX(xsize, j-1)] + old[IDX(xsize, j+1)];
+        new[ IDX(xsize,j) ] = center * alpha + neighbors * constant;
+
+    }
+
     if (periodic) {
         if (N[_y_] == 1) { // periodicità verticale tutta dentro lo stesso rank
             for (int i = 1; i <= xsize; ++i) {
@@ -210,7 +281,7 @@ inline int get_total_energy( plane_t *plane, double *energy )
     //       (i)  manually unroll the loop
     //       (ii) ask the compiler to do it
     // for instance
-    // #pragma GCC unroll 4
+    #pragma GCC unroll 4
     for ( int j = 1; j <= ysize; j++ )
         for ( int i = 1; i <= xsize; i++ )
             totenergy += data[ IDX(i, j) ];

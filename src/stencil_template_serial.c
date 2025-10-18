@@ -3,10 +3,10 @@
  *  mysizey   :   local y-extension of your patch
  */
 
+#include <stdlib.h>
 #include "stencil_template_serial.h"
 
 int main(int argc, char **argv){
-
 	int  Niterations; // discrete time steps of dynamics
 	int  periodic;
 	int  S[2];  // the size of the plate in x and y directions
@@ -256,6 +256,7 @@ int initialize_sources( uint size[2], int Nsources, int **Sources )
 	* randomly spread heat sources
 	*/
 {
+
 	*Sources = (int*)malloc( Nsources * 2 *sizeof(uint) );
 	for ( int s = 0; s < Nsources; s++ )
 	{

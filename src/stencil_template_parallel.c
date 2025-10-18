@@ -4,72 +4,42 @@
  */
 
 #include "stencil_template_parallel.h"
+#include <sys/stat.h>   // mkdir
+#include <stdio.h>
 
-// static inline double *cell(double *base, int pitch, int i, int j) {
-// 	/* Return a pointer to cell (i,j) in a 2D array stored in row-major order. */
-//     return base + j*pitch + i;
-// }
-
-// static inline void pack_columns_send(const plane_t *pl, buffers_t *bufs) {
-//     double *base = pl->data;
-//     const int Nx = (int)pl->size[_x_];
-//     const int Ny = (int)pl->size[_y_];
-//     const int pitch = Nx + 2;
-
-//     if (bufs[SEND][WEST] != NULL){
-// 		for (int j = 1; j <= Ny; ++j) bufs[SEND][WEST][j-1] = *(base + j*pitch + 1);
-// 	}
-// 	if (bufs[SEND][EAST] != NULL){
-//     	for (int j = 1; j <= Ny; ++j) bufs[SEND][EAST][j-1] = *(base + j*pitch + Nx);
-// 	}
-// }
-
-// static inline void unpack_columns_recv(plane_t *pl, const buffers_t *bufs) {
-//     double *base = pl->data;
-//     const int Nx = (int)pl->size[_x_];
-//     const int Ny = (int)pl->size[_y_];
-//     const int pitch = Nx + 2;
-	
-// 	if (bufs[SEND][WEST] != NULL){
-//     	for (int j = 1; j <= Ny; ++j) *(base + j*pitch + 0)     = bufs[RECV][WEST][j-1];
-// 	}
-// 	if (bufs[SEND][EAST] != NULL){
-//     	for (int j = 1; j <= Ny; ++j) *(base + j*pitch + Nx+1 ) = bufs[RECV][EAST][j-1];
-// 	}
-// }
+static const char* get_env_or_na(const char* key) {
+    const char* v = getenv(key);
+    return (v && v[0]) ? v : "n/a";
+}
 
 int main(int argc, char **argv){
 
 	MPI_Comm myCOMM_WORLD;
-	int  Rank, Ntasks;
+	int Rank, Ntasks;
 	uint neighbours[4];
 
-	int  Niterations;
-	int  periodic;
+	int Niterations;
+	int periodic;
 	vec2_t S, N;
 
-	
-	int      Nsources;
-	int      Nsources_local;
-	vec2_t    *Sources_local;
-	double   energy_per_source;
+	int Nsources;
+	int Nsources_local;
+	vec2_t *Sources_local;
+	double energy_per_source;
 
-	plane_t   planes[2];  
+	plane_t planes[2];
 	buffers_t buffers[2];
 	
 	int output_energy_stat_perstep;
 
-	// const int Nx = (int)planes->size[_x_];
-    // const int Ny = (int)planes->size[_y_];
-
 	// declaring times
-	double comp_t = 0.0, comm_t = 0.0;
-	double init_t = MPI_Wtime();
+	double init_t = 0.0;
+	init_t -= MPI_Wtime();
 
   	// initialize MPI environment
   	{
 		int level_obtained;
-		
+
 		// NOTE: change MPI_FUNNELED if appropriate
 		MPI_Init_thread( &argc, &argv, MPI_THREAD_FUNNELED, &level_obtained );
 
@@ -80,7 +50,7 @@ int main(int argc, char **argv){
 			MPI_Finalize();
 			exit(1); 
 		}
-		
+
 		MPI_Comm_rank(MPI_COMM_WORLD, &Rank);
 		MPI_Comm_size(MPI_COMM_WORLD, &Ntasks);
 		MPI_Comm_dup (MPI_COMM_WORLD, &myCOMM_WORLD);
@@ -101,36 +71,41 @@ int main(int argc, char **argv){
 	if ( ret ){
 		printf("task %d is opting out with termination code %d\n",
 			Rank, ret );
-		
+
 		MPI_Finalize();
 		return 0;
 	}
 
-	init_t = MPI_Wtime() - init_t;
+	init_t += MPI_Wtime();
+
+	double t_comm = 0.0, t_comp = 0.0, t_total;
+
+	t_total = -MPI_Wtime();
 
 	int current = OLD;
-	double total_t = MPI_Wtime();   /* take wall-clock time */
-	
 	for (int iter = 0; iter < Niterations; ++iter){
 
-		MPI_Request reqs[8]; // 4 sends + 4 recvs (for each process)
+		MPI_Request reqs[8]; // 4 sends + 4 recvs (for each process)		
 
+		double t0 = MPI_Wtime();
 		// inject energy from local sources, only once per iteration
 		inject_energy( periodic, Nsources_local, Sources_local, energy_per_source, &planes[current], N );
-
-		// [A] fill the buffers, and/or make the buffers' pointers pointing to the correct position
+		t_comp += MPI_Wtime() - t0;
 
 		/* -------------------------------------------------------------------------- */
 		/*                             Filling the buffers                            */
 		/* -------------------------------------------------------------------------- */
-
+		
+		// [A] fill the buffers, and/or make the buffers' pointers pointing to the correct position
+		
 		// plane base and geometry
 		double *base = planes[current].data;
-		// const int Nx = (int)N[_x_], Ny = (int)N[_y_];
-
 		const int Nx = (int)planes[current].size[_x_];
 		const int Ny = (int)planes[current].size[_y_];
 		const int pitch = Nx + 2;
+
+		// start timing communication
+		double t0_comm = MPI_Wtime();
 
 		// ROW buffers: point directly into plane (no copy)
 		// NORTH
@@ -148,13 +123,12 @@ int main(int argc, char **argv){
 			for (int j = 1; j <= Ny; ++j)
 				buffers[SEND][WEST][j-1] = *(base + j*pitch + 1);
 		}
-		// EAST: prendo i=Nx -> impacchetto in buffers[SEND][EAST][0..Ny-1]
+		// EAST: prendo colonna i=Nx -> impacchetto in buffers[SEND][EAST][0..Ny-1]
 		if (neighbours[EAST] != MPI_PROC_NULL) {
 			for (int j = 1; j <= Ny; ++j)
 				buffers[SEND][EAST][j-1] = *(base + j*pitch + Nx);
 		}
-
-		
+	
 		/* -------------------------------------------------------------------------- */
 		/*                                Comunication                                */
 		/* -------------------------------------------------------------------------- */
@@ -163,7 +137,6 @@ int main(int argc, char **argv){
 		//     (1) use Send / Recv
 		//     (2) use Isend / Irecv
 		//         --> can you overlap communication and compution in this way?
-		
 		
 		#define TAG_N_TO_S  10
 		#define TAG_S_TO_N  11
@@ -212,14 +185,17 @@ int main(int argc, char **argv){
 			}
 		}
 
+		t_comm += MPI_Wtime() - t0_comm;
 
+		// update internals 
 
-		// Optional overlap: here we could update only interior cells (i=2..Nx-1, j=2..Ny-1)
+		double t0_comp = MPI_Wtime();
+		update_internal(N, &planes[current], &planes[!current]);
+		t_comp += MPI_Wtime() - t0_comp;
 
 		// Wait all comms done
+		t0_comm = MPI_Wtime();
 		MPI_Waitall(r, reqs, MPI_STATUSES_IGNORE);
-
-		comm_t = MPI_Wtime() - comm_t;
 
 		/* -------------------------------------------------------------------------- */
 		/*                                  Unpacking                                 */
@@ -237,66 +213,93 @@ int main(int argc, char **argv){
 				*(base + j*pitch + (Nx+1)) = buffers[RECV][EAST][j-1];  // halo i=Nx+1
 		}
 
-		comp_t = MPI_Wtime();
-		// update grid points
-		update_plane( periodic, N, &planes[current], &planes[!current] );
+		t_comm += MPI_Wtime() - t0_comm;
 
-		comp_t = MPI_Wtime() - comp_t;
+		// update borders 
+		t0_comp = MPI_Wtime();
+		update_boundary( periodic, N, &planes[current], &planes[!current] );
+		t_comp += MPI_Wtime() - t0_comp;
 
 		// output if needed
+		#ifdef ENABLE_OUTPUT
 		if ( output_energy_stat_perstep )
 		output_energy_stat ( iter, &planes[!current], (iter+1) * Nsources*energy_per_source, Rank, &myCOMM_WORLD );
 
-		// char fname[64];
-		// sprintf(fname, "rank%03d_step%05d.bin", Rank, iter);
-
-		double *G = gather_global_plane(&planes[!current], Rank, Ntasks, N, S, myCOMM_WORLD);
-
-		if (Rank == 0) {
-			char fname[64];
-			sprintf(fname, "global_step_%05d.bin", iter);
-			dump_global(G, (int)S[_x_], (int)S[_y_], fname, NULL, NULL);
-			free(G);
+		if (output_energy_stat){
+			double *G = gather_global_plane(&planes[!current], Rank, Ntasks, N, S, myCOMM_WORLD);
+			if (Rank == 0) {
+				char fname[64];
+				sprintf(fname, "global_step_%05d.bin", iter);
+				dump_global(G, (int)S[_x_], (int)S[_y_], fname, NULL, NULL);
+				free(G);
+			}
 		}
+		#endif
 
 		/* swap plane indexes for the new iteration */
 		current = !current;
 	}
 
-	total_t = MPI_Wtime() - total_t;
+	t_total += MPI_Wtime();
 
 	output_energy_stat ( -1, &planes[!current], Niterations * Nsources*energy_per_source, Rank, &myCOMM_WORLD );
 	
 	memory_release( buffers, planes );
 
 	// reduce the times among the processes
-	// max
-	double max_total_t = 0;
-	MPI_Reduce ( &total_t, &max_total_t, 1, MPI_DOUBLE, MPI_MAX, 0, myCOMM_WORLD );
+	double t_tot_max = 0;
+	MPI_Reduce ( &t_total, &t_tot_max, 1, MPI_DOUBLE, MPI_MAX, 0, myCOMM_WORLD );
 
-	double max_comp_t = 0;
-	MPI_Reduce ( &comp_t, &max_comp_t, 1, MPI_DOUBLE, MPI_MAX, 0, myCOMM_WORLD );
+	double t_comp_max = 0;
+	MPI_Reduce ( &t_comp, &t_comp_max, 1, MPI_DOUBLE, MPI_MAX, 0, myCOMM_WORLD );
 
-	double max_comm_t = 0;
-	MPI_Reduce ( &comm_t, &max_comm_t, 1, MPI_DOUBLE, MPI_MAX, 0, myCOMM_WORLD );
+	double t_comm_max = 0;
+	MPI_Reduce ( &t_comm, &t_comm_max, 1, MPI_DOUBLE, MPI_MAX, 0, myCOMM_WORLD );
+
+	if ( Rank == 0 ){
+		// print global pct
+		// printf("avg communication time percentage: %f %%\n", (t_comm_avg/t_tot_avg)*100.0);
+		// printf("avg computation time percentage: %f %%\n", (t_comp_avg/t_tot_avg)*100.0);
+		// printf("avg overhead time percentage: %f %%\n", ((t_tot_avg - t_comm_avg - t_comp_avg)/t_tot_avg)*100.0);
+
+		/* ensure directory exists */
+		mkdir("data", 0755); /* ignore error if it already exists */
+
+		/* grab SLURM env (strings) */
+		const char* slurm_job_id        = get_env_or_na("SLURM_JOB_ID");
+		const char* slurm_job_name      = get_env_or_na("SLURM_JOB_NAME");
+		const char* slurm_partition     = get_env_or_na("SLURM_PARTITION");
+		const char* slurm_nnodes        = get_env_or_na("SLURM_NNODES");          // --nodes
+		const char* slurm_cpus_per_task = get_env_or_na("SLURM_CPUS_PER_TASK");   // --cpus-per-task
+		const char* slurm_tasks_per_node= get_env_or_na("SLURM_TASKS_PER_NODE");  // --ntasks-per-node (string)
+		const char* slurm_ntasks        = get_env_or_na("SLURM_NTASKS");          // total MPI tasks
+		const char* omp_threads = getenv("OMP_NUM_THREADS");
 
 
-	if (Rank ==0 ){
-		// print all the times
-		printf("task %d total time: %f ( init %f )\n", Rank, total_t, init_t );
-		printf("task %d communication time: %f\n", Rank, comm_t);
-		printf("task %d computation time: %f\n", Rank, comp_t);
+		FILE *fp = fopen("data/results.csv", "a");
 
-		// print time percentages
-		printf("task %d communication time percentage: %f %%\n", Rank, (comm_t/total_t)*100.0);
-		printf("task %d computation time percentage: %f %%\n", Rank, (comp_t/total_t)*100.0);
-		printf("task %d overhead time percentage: %f %%\n", Rank, ((total_t - comm_t - comp_t)/total_t)*100.0);
+		/* write header if new file (or if you prefer, track with a separate flag) */
+		if (fp && ftell(fp) == 0) {
+			fprintf(fp,
+				"size_x,size_y,Ntasks,Niterations,"
+				"total_time,comm_time,comp_time,"
+				"slurm_job_id,slurm_job_name,partition,"
+				"nodes,cpus_per_task,tasks_per_node,ntasks,omp_threads\n");
+		}
 
-		// print global values
-		printf("max total time: %f\n", max_total_t);
-		printf("max communication time: %f\n", max_comm_t);
-		printf("max computation time: %f\n", max_comp_t);
-
+		if (fp) {
+			fprintf(fp,
+				"%d,%d,%d,%d,"
+				"%f,%f,%f,"
+				"%s,%s,%s,"
+				"%s,%s,%s,%s,%s\n",
+				S[_x_], S[_y_], Ntasks, Niterations,
+				t_tot_max, t_comm_max, t_comp_max,
+				slurm_job_id, slurm_job_name, slurm_partition,
+				slurm_nnodes, slurm_cpus_per_task, slurm_tasks_per_node, slurm_ntasks, omp_threads
+			);
+			fclose(fp);
+		}
 	}
 
 	MPI_Finalize();
@@ -313,7 +316,7 @@ int initialize (
 	vec2_t  *N,                   // two-uint array defining the MPI tasks' grid
 	int     *periodic,            // periodic-boundary tag
 	int     *output_energy_stat,
-	int     *neighbours,          // four-int array that gives back the neighbours of the calling task
+	uint     *neighbours,          // four-int array that gives back the neighbours of the calling task
 	int     *Niterations,         // how many iterations
 	int     *Nsources,            // how many heat sources
 	int     *Nsources_local,
@@ -343,8 +346,11 @@ int initialize (
 		return -1;
 	}
 
-	planes[OLD].size[0] = planes[OLD].size[0] = 0;
-	planes[NEW].size[0] = planes[NEW].size[0] = 0;
+	planes[OLD].size[_x_] = 0;
+	planes[OLD].size[_y_] = 0;
+	planes[NEW].size[_x_] = 0;
+	planes[NEW].size[_y_] = 0;
+
 	
 	for ( int i = 0; i < 4; i++ )
 		neighbours[i] = MPI_PROC_NULL;
@@ -434,7 +440,6 @@ int initialize (
 		fprintf(stderr, "Error: invalid energy per source %g\n", *energy_per_source );
 		return 4;
 	}
-
 	
 	/*
 	* find a suitable domain decomposition
@@ -449,7 +454,6 @@ int initialize (
 	double formfactor = ((*S)[_x_] >= (*S)[_y_] ? (double)(*S)[_x_]/(*S)[_y_] : (double)(*S)[_y_]/(*S)[_x_] );
 	int    dimensions = 2 - (Ntasks <= ((int)formfactor+1) );
 
-	
 	if ( dimensions == 1 ){
 		if ( (*S)[_x_] >= (*S)[_y_] )
 		Grid[_x_] = Ntasks, Grid[_y_] = 1;
@@ -460,6 +464,11 @@ int initialize (
 		uint *factors;
 		uint  first = 1;
 		ret = simple_factorization( Ntasks, &Nf, &factors );
+
+		if ( ret ){
+			fprintf(stderr, "Error: cannot factorize %d\n", Ntasks );
+			return 5;
+		}
 		
 		for ( int i = 0; (i < Nf) && ((Ntasks/first)/first > formfactor); i++ )
 		first *= factors[i];
@@ -639,98 +648,7 @@ int initialize_sources(
 	return 0;
 }
 
-// int memory_allocate ( const int *neighbours, const vec2_t N, buffers_t *buffers_ptr, plane_t *planes_ptr){
-// 	/*
-// 	here you allocate the memory buffers that you need to
-// 	(i)  hold the results of your computation
-// 	(ii) communicate with your neighbours
-
-// 	The memory layout that I propose to you is as follows:
-
-// 	(i) --- calculations
-// 	you need 2 memory regions: the "OLD" one that contains the
-// 	results for the step (i-1)th, and the "NEW" one that will contain
-// 	the updated results from the step ith.
-
-// 	Then, the "NEW" will be treated as "OLD" and viceversa.
-
-// 	These two memory regions are indexed by *plate_ptr:
-
-// 	planew_ptr[0] ==> the "OLD" region
-// 	plamew_ptr[1] ==> the "NEW" region
-
-
-// 	(ii) --- communications
-
-// 	you may need two buffers (one for sending and one for receiving)
-// 	for each one of your neighnours, that are at most 4:
-// 	north, south, east amd west.      
-
-// 	To them you need to communicate at most mysizex or mysizey
-// 	double data.
-
-// 	These buffers are indexed by the buffer_ptr pointer so
-// 	that
-
-// 	(*buffers_ptr)[SEND][ {NORTH,...,WEST} ] = .. some memory regions
-// 	(*buffers_ptr)[RECV][ {NORTH,...,WEST} ] = .. some memory regions
-	
-// 	--->> Of course you can change this layout as you prefer
-	
-// 	*/
-
-// 	if (planes_ptr == NULL )
-// 		// an invalid pointer has been passed
-// 		// manage the situation
-// 		;
-
-
-// 	if (buffers_ptr == NULL )
-// 		// an invalid pointer has been passed
-// 		// manage the situation
-// 		;
-		
-// 	// ··················································
-// 	// allocate memory for data
-// 	// we allocate the space needed for the plane plus a contour frame
-// 	// that will contains data form neighbouring MPI tasks
-// 	unsigned int frame_size = (planes_ptr[OLD].size[_x_]+2) * (planes_ptr[OLD].size[_y_]+2);
-
-// 	planes_ptr[OLD].data = (double*)malloc( frame_size * sizeof(double) );
-// 	if ( planes_ptr[OLD].data == NULL )
-// 		// manage the malloc fail
-// 		;
-// 	memset ( planes_ptr[OLD].data, 0, frame_size * sizeof(double) );
-
-// 	planes_ptr[NEW].data = (double*)malloc( frame_size * sizeof(double) );
-// 	if ( planes_ptr[NEW].data == NULL )
-// 		// manage the malloc fail
-// 		;
-// 	memset ( planes_ptr[NEW].data, 0, frame_size * sizeof(double) );
-
-
-// 	// ··················································
-// 	// buffers for north and south communication 
-// 	// are not really needed
-// 	//
-// 	// in fact, they are already contiguous, just the
-// 	// first and last line of every rank's plane
-// 	//
-// 	// you may just make some pointers pointing to the
-// 	// correct positions
-
-// 	// or, if you prefer, just go on and allocate buffers
-// 	// also for north and south communications
-
-// 	// ··················································
-// 	// allocate buffers
-// 	// ··················································
-	
-// 	return 0;
-// }
-
-
-int memory_allocate ( const int *neighbours, const vec2_t N, buffers_t *buffers_ptr, plane_t *planes_ptr )
+int memory_allocate ( const uint *neighbours, const vec2_t N, buffers_t *buffers_ptr, plane_t *planes_ptr )
 {
     if (!buffers_ptr || !planes_ptr) return 1;
 
@@ -766,12 +684,6 @@ int memory_allocate ( const int *neighbours, const vec2_t N, buffers_t *buffers_
 
     if (!(*buf_pair)[WEST] || !(*buf_pair)[EAST] || !(*buf_pair_recv)[WEST] || !(*buf_pair_recv)[EAST])
         return 3;
-
-    // NOTE:
-    // For NORTH/SOUTH:
-    //   SEND pointers will point directly to plane rows each iteration.
-    //   RECV pointers will point directly to plane halo rows each iteration.
-    //   (No allocation needed.)
 
     return 0;
 }
@@ -814,8 +726,8 @@ int output_energy_stat ( int step, plane_t *plane, double budget, int Me, MPI_Co
 	if ( Me == 0 )
 		{
 		if ( step >= 0 )
-		printf(" [ step %4d ] ", step ); fflush(stdout);
-
+		printf(" [ step %4d ] ", step ); 
+		fflush(stdout);
 		
 		printf( "total injected energy is %g, "
 			"system energy is %g "

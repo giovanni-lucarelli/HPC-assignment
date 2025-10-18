@@ -1,0 +1,87 @@
+\section{Results}
+\begin{frame}[fragile]{Thread Scaling}
+    \begin{lstlisting}
+    GRID_SIZE_X=16384
+    GRID_SIZE_Y=16384
+    N_STEPS=500
+
+    NODES=1
+    N_TASKS_PER_NODE=1
+
+    THREAD_LIST="1 2 4 8 16 32 56 84 112"
+    \end{lstlisting}
+\end{frame}
+
+\begin{frame}{Thread Scaling}
+\begin{figure}
+    \centering{
+        \resizebox{\linewidth}{!}{\input{images/threads_speed_eff.pgf}}%
+    }
+\end{figure}
+\end{frame}
+
+\begin{frame}{Node Topology}
+    
+\end{frame}
+
+\begin{frame}[fragile]{Strong Scaling}
+    \begin{lstlisting}
+    GRID_SIZE_X=65536
+    GRID_SIZE_Y=65536
+    N_STEPS=500d
+
+    OMP_THREADS=14
+    N_TASKS_PER_NODE=8
+
+    NODE_LIST="1 2 4 8 16"
+    \end{lstlisting}
+\end{frame}
+
+\begin{frame}{Strong Scaling}
+\begin{figure}
+    \centering{
+        \resizebox{\linewidth}{!}{\input{images/strong_times.pgf}}%
+    }
+\end{figure}
+\end{frame}
+
+\begin{frame}{Strong Scaling}
+    \begin{figure}
+    \centering{
+        \resizebox{\linewidth}{!}{\input{images/strong_speed_eff.pgf}}%
+    }
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]{Weak Scaling}
+    \begin{lstlisting}
+    LOCAL_X=4096
+    LOCAL_Y=4096
+    N_STEPS=500
+
+    OMP_THREADS=14        
+    TASKS_PER_NODE=8
+    NODE_LIST="1 2 4 8 16"      
+
+    for NODES in NODE_LIST; do
+        TOTAL_TASKS=$(( NODES * TASKS_PER_NODE ))
+
+        case "${TOTAL_TASKS}" in
+        8)    PX=4;  PY=2  ;;   # 1 node  (8 ranks)
+        ...
+        esac
+
+        GRID_SIZE_X=$(( LOCAL_X * PX ))
+        GRID_SIZE_Y=$(( LOCAL_Y * PY ))
+        ...
+    done
+    \end{lstlisting}
+\end{frame}
+
+\begin{frame}{Weak Scaling}
+    \begin{figure}
+    \centering{
+        \resizebox{\linewidth}{!}{\input{images/weak_times_eff.pgf}}%
+    }
+\end{figure}
+\end{frame}

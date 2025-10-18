@@ -1,0 +1,25 @@
+\documentclass[12pt]{beamer}
+
+\usepackage{settings}
+
+\title{HPC Exam Project}
+\subtitle{Scaling Study of the Stencil Method}
+\author[longname]{Giovanni Lucarelli}
+\titlegraphic{\includegraphics[height=1.3cm]{images/logo100_orizzontale.pdf}}
+
+
+% add graphics
+\graphicspath{{../assets},{./images}}
+\makeatletter
+\providecommand{\mathdefault}[1]{#1}
+\providecommand{\textdefault}[1]{#1}
+\makeatother
+\begin{document}
+
+\maketitle
+
+\input{introduction.tex}
+\input{methods.tex}
+\include{conclusion.tex}
+
+\end{document}
