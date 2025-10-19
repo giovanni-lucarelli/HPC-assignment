@@ -1,4 +1,5 @@
 .vscode/
+.venv/
 output_parallel/
 output_serial/
 *.bin

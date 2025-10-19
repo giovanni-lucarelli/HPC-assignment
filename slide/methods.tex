@@ -20,15 +20,54 @@
 \end{figure}
 \end{frame}
 
-\begin{frame}{Node Topology}
-    
+\begin{frame}{Node Architecture}
+    \begin{figure}
+        \includegraphics[width=\textwidth]{./images/node.drawio.pdf}
+    \end{figure}
 \end{frame}
+
+\begin{frame}[fragile]{Node Architecture: distance matrix}
+    \lstset{basicstyle=\ttfamily\scriptsize, language=bash}
+
+    \begin{lstlisting}
+[glucarel@lrdn4293 HPC-leonardo]$ numactl --hardware
+    available: 8 nodes (0-7)
+      node   0   1   2   3   4   5   6   7 
+        0:  10  12  12  12  21  21  21  21 
+        1:  12  10  12  12  21  21  21  21 
+        2:  12  12  10  12  21  21  21  21 
+        3:  12  12  12  10  21  21  21  21 
+        4:  21  21  21  21  10  12  12  12 
+        5:  21  21  21  21  12  10  12  12 
+        6:  21  21  21  21  12  12  10  12 
+        7:  21  21  21  21  12  12  12  10 
+    \end{lstlisting}
+
+\end{frame}
+
+\begin{frame}[fragile]{Node Architecture: memory}
+    \lstset{basicstyle=\ttfamily\scriptsize, language=bash}
+    \begin{lstlisting}
+[glucarel@lrdn4293 HPC-leonardo]$ lscpu | egrep 'L1d|L1i|L2|L3'
+    L1d cache:           48K
+    L1i cache:           32K
+    L2 cache:            2048K
+    L3 cache:            107520K
+    \end{lstlisting}
+    \begin{equation*}
+        N = N_x = N_y = 2^{14}
+    \end{equation*}
+    \begin{equation*}
+        \text{memory}_{grid} = 2 \times N^2 \times 8\text{B}\approx 4\text{GB}
+    \end{equation*}
+\end{frame}
+
 
 \begin{frame}[fragile]{Strong Scaling}
     \begin{lstlisting}
-    GRID_SIZE_X=65536
-    GRID_SIZE_Y=65536
-    N_STEPS=500d
+    GRID_SIZE_X=16384
+    GRID_SIZE_Y=16384
+    N_STEPS=500
 
     OMP_THREADS=14
     N_TASKS_PER_NODE=8
@@ -54,16 +93,15 @@
 \end{frame}
 
 \begin{frame}[fragile]{Weak Scaling}
+    \lstset{basicstyle=\ttfamily\scriptsize, language=bash}
     \begin{lstlisting}
     LOCAL_X=4096
     LOCAL_Y=4096
-    N_STEPS=500
 
     OMP_THREADS=14        
-    TASKS_PER_NODE=8
-    NODE_LIST="1 2 4 8 16"      
+    TASKS_PER_NODE=8   
 
-    for NODES in NODE_LIST; do
+    for NODES in "1 2 4 8 16"; do
         TOTAL_TASKS=$(( NODES * TASKS_PER_NODE ))
 
         case "${TOTAL_TASKS}" in
