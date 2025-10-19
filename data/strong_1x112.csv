@@ -1,0 +1,6 @@
+size_x,size_y,Ntasks,Niterations,total_time,comm_time,comp_time,slurm_job_id,slurm_job_name,partition,nodes,cpus_per_task,tasks_per_node,ntasks,omp_threads
+16384,16384,16,500,0.395244,0.208469,0.198962,21789150,strong_scaling_16n_16mpi_112omp,n/a,16,112,1(x16),16,112
+16384,16384,8,500,0.825760,0.340350,0.493145,21789149,strong_scaling_8n_8mpi_112omp,n/a,8,112,1(x8),8,112
+16384,16384,4,500,1.649790,0.264177,1.396192,21789148,strong_scaling_4n_4mpi_112omp,n/a,4,112,1(x4),4,112
+16384,16384,1,500,6.416462,0.000128,6.415888,21789146,strong_scaling_1n_1mpi_112omp,n/a,1,112,1,1,112
+16384,16384,2,500,3.537626,0.542495,2.997192,21789147,strong_scaling_2n_2mpi_112omp,n/a,2,112,1(x2),2,112
