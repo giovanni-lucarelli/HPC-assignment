@@ -47,6 +47,8 @@
 \begin{frame}[fragile]{Parallelization: shared memory}
 
     Implementation
+    \lstset{basicstyle=\ttfamily\scriptsize, language=C++}
+
     \begin{lstlisting}
     #pragma omp parallel for schedule(static)
     for (uint j = 1; j <= ysize; j++){
@@ -57,7 +59,6 @@
         }
     }
     \end{lstlisting}
-    *add omp parallel ove compute energy stats*
     \vfill
     Thread placement and affinity
     \begin{lstlisting}
@@ -67,8 +68,23 @@
 
 \end{frame}
 
-\begin{frame}
-    first touch policy
+\begin{frame}[fragile]{First-touch }
+    \lstset{basicstyle=\ttfamily\scriptsize, language=C++}
+    \begin{lstlisting}
+    int memory_allocate ( ... ){
+
+        #pragma omp parallel for collapse(2) schedule(static)
+        for (int j = 0; j < Ny + 2; ++j){
+            for (int i = 0; i < Nx + 2; ++i) {
+                size_t idx = (size_t)j * (Nx + 2) + i;
+                planes_ptr[OLD].data[idx] = 0.0;
+                planes_ptr[NEW].data[idx] = 0.0;
+            }
+        }
+
+    }
+    \end{lstlisting}
+    
 \end{frame}
 
 \begin{frame}{Parallelization: distributed memory}
@@ -86,6 +102,8 @@
 \begin{frame}[fragile]{Parallelization: distributed memory}
 
     For each task:\vfill
+    \lstset{basicstyle=\ttfamily\scriptsize, language=C++}
+
     \begin{lstlisting}
     // pack buffers
 

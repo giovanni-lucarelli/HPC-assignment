@@ -319,8 +319,7 @@ int initialize (
 	double  *energy_per_source,   // how much heat per source
 	plane_t *planes,
 	buffers_t *buffers
-)
-{
+){
 	int halt = 0;
 	int ret;
 	int verbose = 0;
