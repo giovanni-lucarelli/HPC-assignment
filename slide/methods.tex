@@ -56,7 +56,7 @@
 
 \end{frame}
 
-\begin{frame}[fragile]{Strong Scaling (1/2)}
+\begin{frame}[fragile]{Strong Scaling (1/4)}
     \begin{columns}[T]
         \begin{column}{0.35\textwidth}
             \vfill
@@ -70,8 +70,8 @@
     N_TASKS_PER_NODE=8
 
     NODES="1 2 4 8 16"
-    \end{lstlisting}
-    \vfill
+            \end{lstlisting}
+            \vfill
         \end{column}
         \begin{column}{0.5\textwidth}
             \begin{figure}
@@ -81,9 +81,12 @@
         \end{column}
         
     \end{columns}
+    \begin{center}
+        Computation $\gg$ Communication !
+    \end{center}
 \end{frame}
 
-\begin{frame}{Strong Scaling (1/2)}
+\begin{frame}{Strong Scaling (1/4)}
     \begin{figure}
     \centering{
         \resizebox{0.9\linewidth}{!}{\input{images/strong_speed_eff.pgf}}%
@@ -91,7 +94,7 @@
 \end{figure}
 \end{frame}
 
-\begin{frame}[fragile]{Strong Scaling (1/2): Analysis}
+\begin{frame}[fragile]{Strong Scaling (1/4): Analysis}
     \begin{itemize}
         \item 8 MPI tasks per node $\rightarrow$ one per \textbf{NUMA region}
         \item smaller grid as nodes increase ($8\rightarrow 128$)
@@ -110,12 +113,15 @@
     L3 cache:            107520K
     \end{lstlisting}
 
-    Superlinearity comes from better cache effects expoitation!
+    \begin{center}
+        \textbf{\alert{Superlinearity}} from cache effects expoitation!?\footnote{\scriptsize{If the grid is small enough}}
+    \end{center}
 \end{frame}
 
-\begin{frame}[fragile]{Strong Scaling (2/2)}
+\begin{frame}[fragile]{Strong Scaling (2/4)}
     \lstset{basicstyle=\ttfamily\scriptsize, language=bash}
     \begin{lstlisting}
+    GRID_SIZE_X=16384
     OMP_THREADS=112
     N_TASKS_PER_NODE=1
     \end{lstlisting}
@@ -126,7 +132,7 @@
 \end{figure}
 \end{frame}
 
-\begin{frame}[fragile]{Strong Scaling (2/2): Analysis}
+\begin{frame}[fragile]{Strong Scaling (2/4): Analysis}
     \begin{itemize}
         \item 1 MPI tasks per node
         \item smaller grid as nodes increase ($1\rightarrow 16$)
@@ -136,6 +142,38 @@
         \end{equation*}
     \end{itemize}
 
+\end{frame}
+
+\begin{frame}[fragile]{Strong Scaling (3/4)}
+    \lstset{basicstyle=\ttfamily\scriptsize, language=bash}
+    \begin{lstlisting}
+    GRID_SIZE_X=32768
+    OMP_THREADS=14
+    N_TASKS_PER_NODE=8
+    \end{lstlisting}
+
+    \begin{figure}
+    \centering{
+        \resizebox{0.9\linewidth}{!}{\input{images/strong32_speed_eff.pgf}}%
+    }
+    \end{figure}
+    
+\end{frame}
+
+\begin{frame}[fragile]{Strong Scaling (4/4)}
+    \lstset{basicstyle=\ttfamily\scriptsize, language=bash}
+    \begin{lstlisting}
+    GRID_SIZE_X=65536
+    OMP_THREADS=14
+    N_TASKS_PER_NODE=8
+    \end{lstlisting}
+
+    \begin{figure}
+    \centering{
+        \resizebox{0.9\linewidth}{!}{\input{images/strong65_speed_eff.pgf}}%
+    }
+    \end{figure}
+    
 \end{frame}
 
 \begin{frame}[fragile]{Weak Scaling}
