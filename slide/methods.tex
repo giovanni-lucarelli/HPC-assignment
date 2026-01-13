@@ -97,10 +97,10 @@
 \begin{frame}[fragile]{Strong Scaling (1/4): Analysis}
     \begin{itemize}
         \item 8 MPI tasks per node $\rightarrow$ one per \textbf{NUMA region}
-        \item smaller grid as nodes increase ($8\rightarrow 128$)
-        \item for nodes=16 (grid $N = 2^{14}$, 128 tasks = 16 x 8)
+        \item larger number of nodes $\rightarrow$ larger number of tasks  ($8\rightarrow 128$) $\rightarrow$ smaller (local) grid size
+        \item for 16 nodes (128 tasks as $16 \times8$), size $N_x = N_y = 2^{14}$ 
         \begin{equation*}
-            mem_{128} = 2^{10}\times 2^{11}\times 16 \text{B}= 2^{25} \text{B}\approx 33.5 \text{MB}
+            mem_{128} = \frac{2^{14}}{16}\times\frac{2^{14}}{8}\times 16 \text{B}\approx 33.5 \text{MB}
         \end{equation*}
     \end{itemize}
 
@@ -134,11 +134,10 @@
 
 \begin{frame}[fragile]{Strong Scaling (2/4): Analysis}
     \begin{itemize}
-        \item 1 MPI tasks per node
-        \item smaller grid as nodes increase ($1\rightarrow 16$)
-        \item for nodes=16 (grid $N = 2^{14}$, 16 tasks = 4 x 4)
+        \item 1 MPI tasks per node $\rightarrow$ lower number of tasks ($1\rightarrow 16$)
+        \item for 16 nodes (16 tasks as $4\times4$), size $N_x=X_y = 2^{14}$
         \begin{equation*}
-            mem_{16} = \frac{2^{14}}{4}\times \frac{2^{14}}{4}\times 16 \text{B}= 2^{28} \text{B}\approx 268 \text{MB}
+            mem_{16} = \frac{2^{14}}{4}\times \frac{2^{14}}{4}\times 16 \text{B}\approx 268 \text{MB}
         \end{equation*}
     \end{itemize}
 

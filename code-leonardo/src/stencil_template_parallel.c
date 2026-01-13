@@ -35,7 +35,6 @@ int main(int argc, char **argv){
   	{
 		int level_obtained;
 
-		// NOTE: change MPI_FUNNELED if appropriate
 		MPI_Init_thread( &argc, &argv, MPI_THREAD_FUNNELED, &level_obtained );
 
 		// Check if the desired thread level is supported
@@ -242,6 +241,7 @@ int main(int argc, char **argv){
 	memory_release( buffers, planes );
 
 	// reduce the times among the processes
+
 	double t_tot_max = 0;
 	MPI_Reduce ( &t_total, &t_tot_max, 1, MPI_DOUBLE, MPI_MAX, 0, myCOMM_WORLD );
 
@@ -250,6 +250,8 @@ int main(int argc, char **argv){
 
 	double t_comm_max = 0;
 	MPI_Reduce ( &t_comm, &t_comm_max, 1, MPI_DOUBLE, MPI_MAX, 0, myCOMM_WORLD );
+
+	// store the data from each experiment into a CSV
 
 	if ( Rank == 0 ){
 		// print global pct

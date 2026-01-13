@@ -13,3 +13,5 @@ stencil_mpi
 *.toc
 *.out
 *.gz
+*.fls
+*.fdb*

@@ -37,11 +37,18 @@
 \end{figure}
 \end{frame}
 
-\begin{frame}{Optimization}
-    \begin{itemize}
-        \item Compiler flags:\\ \texttt{-O3 -Wall -march=native}
-        \item Preprocessor directive:\\ \texttt{\#pragma GCC unroll}
-    \end{itemize}
+\begin{frame}[fragile]{Build Configuration}
+    % \begin{itemize}
+    %     \item Compiler flags:\\ \texttt{-O3 -Wall -march=native}
+    % \end{itemize}
+                \lstset{basicstyle=\ttfamily\small, language=bash}
+            \begin{lstlisting}
+    CC      = mpicc
+    CFLAGS  = -O3 -Wall -fopenmp -march=native
+    TARGET  = stencil_mpi
+
+    ENABLE_OUTPUT ?= 0
+            \end{lstlisting}
 \end{frame}
 
 \begin{frame}[fragile]{Parallelization: shared memory}
@@ -60,7 +67,7 @@
     }
     \end{lstlisting}
     \vfill
-    Thread placement and affinity
+    Thread placement
     \begin{lstlisting}
     export OMP_PLACES=cores
     export OMP_PROC_BIND=close
@@ -73,7 +80,7 @@
     \begin{lstlisting}
     int memory_allocate ( ... ){
 
-        #pragma omp parallel for collapse(2) schedule(static)
+        #pragma omp parallel for schedule(static)
         for (int j = 0; j < Ny + 2; ++j){
             for (int i = 0; i < Nx + 2; ++i) {
                 size_t idx = (size_t)j * (Nx + 2) + i;
@@ -121,5 +128,14 @@
     \end{lstlisting}
 
 \end{frame}
+
+% \begin{frame}[fragile]{Assessment: time measures}
+
+%     \begin{itemize}
+%         \item Computation time = Internal + Boundary
+%         \item Communication time = Packing + Exchange + Unpacking
+%     \end{itemize}
+
+% \end{frame}
 
 

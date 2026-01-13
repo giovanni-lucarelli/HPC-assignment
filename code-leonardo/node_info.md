@@ -1,3 +1,4 @@
+```
 [glucarel@login07 HPC-leonardo]$ srun --partition=dcgp_usr_prod \
 >      --account=uTS25_Tornator_0 \
 >      --nodes=1 \
@@ -6,6 +7,7 @@
 >      --time=00:15:00 \
 >      --exclusive \
 >      --pty bash
+
 srun: no gres/tmpfs specified, using default: gres/tmpfs:10g
 srun: job 21697375 queued and waiting for resources
 srun: job 21697375 has been allocated resources
@@ -180,3 +182,4 @@ Unified
 /sys/devices/system/cpu/cpu0/cache/index3: 3
 Unified
 107520K
+```

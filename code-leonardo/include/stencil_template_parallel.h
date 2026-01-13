@@ -26,7 +26,7 @@
 
 typedef unsigned int uint;
 
-typedef uint vec2_t[2];
+typedef uint vec2_t[2]; // array of 2 uns. int
 typedef double *restrict buffers_t[4];
 
 typedef struct {
