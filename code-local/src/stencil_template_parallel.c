@@ -666,13 +666,6 @@ int memory_allocate ( const uint *neighbours, const vec2_t N, buffers_t *buffers
         (*buffers_ptr)[d] = NULL;            // SEND side will be set each step for rows; cols allocated below
     }
 
-    // We have buffers[2] in main → buffers_ptr refers to buffers[SEND] only here.
-    // Convention we’ll use:
-    //   - We will later pass BOTH buffers arrays to this function twice,
-    //     or (simpler) call this alloc twice from initialize: once for SEND, once for RECV.
-    // To keep your current signature and usage, do both allocations here by assuming
-    // buffers_ptr points to the FIRST of a pair [SEND, RECV] laid out contiguously.
-
     buffers_t *buf_pair = buffers_ptr; // points to buffers[SEND]
     buffers_t *buf_pair_recv = buffers_ptr + 1; // buffers[RECV] lives at +1 (because in main you have buffers[2])
 

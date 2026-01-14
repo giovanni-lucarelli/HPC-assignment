@@ -1,20 +1,23 @@
 \section{Conclusion}
 
-\begin{frame}
+\begin{frame}{Conclusion}
 
-  \textbf{About stencil method:}
-    \begin{itemize}
-        \item computation $\gg$ communication
-        \item data locality and effective cache usage improve the performance
-    \end{itemize}
+\textbf{Key findings}
+\begin{itemize}
+  \item MPI communication time is small compared to the stencil update
+  \item OpenMP efficiency decreases at high thread counts (likely memory-bandwidth / NUMA limited)
+\end{itemize}
 
-    \textbf{Possible improvements:}
+\textbf{Possible improvements}
+\begin{itemize}
+  \item Enable/verify SIMD vectorization of the stencil kernel
+  \item Use MPI derived datatypes or optimized packing/unpacking
+  \item Explore alternative schemes (e.g., higher-order stencils) and their performance/accuracy trade-offs
+\end{itemize}
 
-    \begin{itemize}
-      \item MPI derived datatypes instead of buffers
-      \item Higher-order stencil schemes
-    \end{itemize}
 \end{frame}
+
+
 
 {\setbeamercolor{palette primary}{fg=white, bg=bluscuro}
 \begin{frame}[standout]

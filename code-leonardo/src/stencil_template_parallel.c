@@ -169,7 +169,7 @@ int main(int argc, char **argv){
 			}
 		}
 
-		// --- EAST: ricevo dall’EAST ciò che lui manda con W_TO_E; io mando all’EAST con E_TO_W
+		// --- EAST: ricevo dall'EAST ciò che lui manda con W_TO_E; io mando all'EAST con E_TO_W
 		if (neighbours[EAST] != MPI_PROC_NULL) {
 			if (neighbours[EAST] == Rank) {
 				for (int j=0;j<Ny;j++) buffers[RECV][EAST][j] = buffers[SEND][EAST][j];
@@ -307,15 +307,15 @@ int initialize (
 	MPI_Comm *Comm,
 	int      Me,                  // the rank of the calling process
 	int      Ntasks,              // the total number of MPI ranks
-	int      argc,                // the argc from command line
-	char   **argv,                // the argv from command line
+	int      argc,                // for the CLI
+	char   **argv,                // 
 	vec2_t  *S,                   // the size of the plane
 	vec2_t  *N,                   // two-uint array defining the MPI tasks' grid
 	int     *periodic,            // periodic-boundary tag
 	int     *output_energy_stat,
-	uint     *neighbours,          // four-int array that gives back the neighbours of the calling task
-	int     *Niterations,         // how many iterations
-	int     *Nsources,            // how many heat sources
+	uint     *neighbours,          // four-int array that gives back the neighbors of the calling task
+	int     *Niterations,         // numbero of iterations
+	int     *Nsources,            // number of heat sources
 	int     *Nsources_local,
 	vec2_t **Sources_local,
 	double  *energy_per_source,   // how much heat per source
@@ -338,7 +338,6 @@ int initialize (
 	*energy_per_source = 1.0;
 
 	if ( planes == NULL ) {
-		// manage the situation
 		return -1;
 	}
 
@@ -355,7 +354,10 @@ int initialize (
 		for ( int d = 0; d < 4; d++ )
 		buffers[b][d] = NULL;
 	
-	// CLI parsing
+	/* -------------------------------------------------------------------------- */
+	/*                                 CLI PARSING                                */
+	/* -------------------------------------------------------------------------- */
+
 	while ( 1 )
 	{
 		int opt;
@@ -436,19 +438,29 @@ int initialize (
 		fprintf(stderr, "Error: invalid energy per source %g\n", *energy_per_source );
 		return 4;
 	}
+
+	/* -------------------------------------------------------------------------- */
+	/*                            DOMAIN DECOMPOSITION                            */
+	/* -------------------------------------------------------------------------- */
 	
 	/*
 	* find a suitable domain decomposition
 	* very simple algorithm, you may want to
 	* substitute it with a better one
-	*
+
 	* the plane Sx x Sy will be solved with a grid
 	* of Nx x Ny MPI tasks
 	*/
 
 	vec2_t Grid;
 	double formfactor = ((*S)[_x_] >= (*S)[_y_] ? (double)(*S)[_x_]/(*S)[_y_] : (double)(*S)[_y_]/(*S)[_x_] );
+
 	int    dimensions = 2 - (Ntasks <= ((int)formfactor+1) );
+	// this is needed to decide if we want a 1d grid or 2d grid
+	// dimensions can be either 1 or 2. 
+	// 1 if Ntasks smaller than the floor of form factor
+	// 2 if larger
+
 
 	if ( dimensions == 1 ){
 		if ( (*S)[_x_] >= (*S)[_y_] )
@@ -525,7 +537,6 @@ int initialize (
 	planes[NEW].size[0] = mysize[0];
 	planes[NEW].size[1] = mysize[1];
 	
-
 	if ( verbose > 0 ){
 		if ( Me == 0 ){
 			printf("Tasks are decomposed in a grid %d x %d\n\n",
@@ -566,7 +577,6 @@ uint simple_factorization( uint A, int *Nfactors, uint **factors )
  * rought factorization;
  * assumes that A is small, of the order of <~ 10^5 max,
  * since it represents the number of tasks
- #
  */
 {
 	int N = 0;
@@ -652,12 +662,15 @@ int memory_allocate ( const uint *neighbours, const vec2_t N, buffers_t *buffers
     const uint Ny = planes_ptr[OLD].size[_y_];
     const size_t frame_elems = (size_t)(Nx + 2) * (Ny + 2);
 
-    planes_ptr[OLD].data = (double*) calloc(frame_elems, sizeof(double));
-    planes_ptr[NEW].data = (double*) calloc(frame_elems, sizeof(double));
+    // planes_ptr[OLD].data = (double*) calloc(frame_elems, sizeof(double));
+    // planes_ptr[NEW].data = (double*) calloc(frame_elems, sizeof(double));
+
+	planes_ptr[OLD].data = (double*) malloc(frame_elems * sizeof(double));
+	planes_ptr[NEW].data = (double*) malloc(frame_elems * sizeof(double));
 
 	if (!planes_ptr[OLD].data || !planes_ptr[NEW].data) return 2;
 	
-	#pragma omp parallel for collapse(2) schedule(static)
+	#pragma omp parallel for schedule(static)
 	for (int j = 0; j < Ny + 2; ++j){
 		for (int i = 0; i < Nx + 2; ++i) {
 			size_t idx = (size_t)j * (Nx + 2) + i;
@@ -671,15 +684,8 @@ int memory_allocate ( const uint *neighbours, const vec2_t N, buffers_t *buffers
         (*buffers_ptr)[d] = NULL;            // SEND side will be set each step for rows; cols allocated below
     }
 
-    // We have buffers[2] in main → buffers_ptr refers to buffers[SEND] only here.
-    // Convention we’ll use:
-    //   - We will later pass BOTH buffers arrays to this function twice,
-    //     or (simpler) call this alloc twice from initialize: once for SEND, once for RECV.
-    // To keep your current signature and usage, do both allocations here by assuming
-    // buffers_ptr points to the FIRST of a pair [SEND, RECV] laid out contiguously.
-
     buffers_t *buf_pair = buffers_ptr; // points to buffers[SEND]
-    buffers_t *buf_pair_recv = buffers_ptr + 1; // buffers[RECV] lives at +1 (because in main you have buffers[2])
+    buffers_t *buf_pair_recv = buffers_ptr + 1; // buffers[RECV] lives at +1 (because in main we have buffers[2])
 
     // Allocate column buffers (WEST/EAST) for SEND & RECV (size Ny)
     (*buf_pair)[WEST]  = (double*) malloc(Ny * sizeof(double));
@@ -692,7 +698,6 @@ int memory_allocate ( const uint *neighbours, const vec2_t N, buffers_t *buffers
 
     return 0;
 }
-
 
 
 int memory_release ( buffers_t *buffers, plane_t *planes ){
@@ -711,7 +716,7 @@ int memory_release ( buffers_t *buffers, plane_t *planes ){
         if (buffers[SEND][EAST]) free(buffers[SEND][EAST]);
         if (buffers[RECV][WEST]) free(buffers[RECV][WEST]);
         if (buffers[RECV][EAST]) free(buffers[RECV][EAST]);
-        // NORTH/SOUTH were never malloc’d
+        // NORTH/SOUTH were never malloc'd
     }
     return 0;
 }

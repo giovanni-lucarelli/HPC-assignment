@@ -1,35 +1,50 @@
 # HPC Exam Project: Hybrid MPI/OpenMP 5-Point Stencil
 
-The goal of this project is to implement, and evaluate a hybrid
-MPI/OpenMP parallel version of the 5-point stencil method.
+This project presents the design, implementation, and performance evaluation
+of a hybrid MPI/OpenMP parallel solver for the two-dimensional heat diffusion
+equation based on the 5-point stencil method.
 
-In particular, the project focuses on:
+The main objectives of the project are:
 
-1. Implementing a hybrid parallel solution using MPI for domain decomposition and OpenMP for shared-memory parallelism, starting
-   from the provided templates.
+1. To implement a hybrid parallel solution using MPI for distributed-memory
+   domain decomposition and OpenMP for shared-memory parallelism, starting
+   from the provided code templates.
 
-2. Instrumenting the code to measure computation and communication
-   times.
+2. To instrument the code in order to separately measure computation and
+   communication times.
 
-3. Performing a scalability study, including:
-   - Thread scaling (OpenMP)
+3. To perform a comprehensive scalability study, including:
+   - OpenMP thread scaling
    - Strong scaling
    - Weak scaling
 
-The program simulates the dynamics relative to the 2 dimensional heat diffusion equation on a rectangular grid using the 5-point stencil method.
+The program simulates the time evolution of the two-dimensional heat diffusion
+equation on a rectangular grid using an explicit finite-difference scheme:
 
 $$
-\partial_t u = \alpha (\partial_x^2 u + \partial_y^2 u)
+\partial_t u = \alpha \left( \partial_x^2 u + \partial_y^2 u \right)
 $$
 
+which leads to the following discrete update rule:
+
 $$
-u^{(t+1)}_{i,j} = (1 -4\alpha)u^{(t)}_{i,j} + \alpha \sum_{\langle i,j\rangle} u^{(t)}_{i,j}
+u^{(t+1)}_{i,j} = (1 - 4\alpha)\,u^{(t)}_{i,j}
++ \alpha \sum_{\langle i,j \rangle} u^{(t)}_{i,j}
 $$
 
-where $x\in[0,L_x]\rightarrow i \in \{1,\dots, N_x-1\}$ and $y\in[0,L_y]\rightarrow j \in \{1,\dots, N_y-1\}$.
+where $ i \in \{1, \dots, N_x-1\} $ and $ j \in \{1, \dots, N_y-1\} $
+denote the internal grid points.
 
+The implementation supports both periodic and non-periodic boundary
+conditions, allows the injection of an arbitrary number of heat sources
+configured at runtime, and provides optional output of the grid state
+and energy statistics during the simulation.
 
-It supports both periodic and non-periodic boundary conditions, the injection of an arbitrary number of heat sources (parsed at runtime) and print the status/grid during the simulation.
+> **Note:** This README is a summary of the project structure, usage instructions,
+> and implementation details. For more details, analysis, and results,
+> please refer to the [slides](slide/main.pdf) of the presentation and 
+> the [Jupyter notebook](plot/results.ipynb).
+
 
 ## Repository Structure
 
@@ -37,16 +52,17 @@ It supports both periodic and non-periodic boundary conditions, the injection of
 HPC-assignment/
 ├── code-leonardo/                      # HPC cluster code and scripts
 │   ├── Makefile                        # Build configuration
-│   ├── compile.sbatch                  # compilation job script
-│   ├── run_scaling.sbatch              # Strong/weak scaling job script
-│   ├── run_threads.sbatch              # Thread scaling job script
-│   ├── run_vanilla.sbatch              # Baseline execution script
-│   ├── submit_strong.sh                # Strong scaling submission
-│   ├── submit_threads.sh               # Thread scaling submission
-│   ├── submit_weak.sh                  # Weak scaling submission
 │   ├── data/                           # Raw experimental data (CSV files)
 │   ├── include/
 │   │   └── stencil_template_parallel.h # Parallel implementation header
+│   ├── script/
+│   │   ├── compile.sbatch                  # compilation job script
+│   │   ├── run_scaling.sbatch              # Strong/weak scaling job script
+│   │   ├── run_threads.sbatch              # Thread scaling job script
+│   │   ├── run_vanilla.sbatch              # Baseline execution script
+│   │   ├── submit_strong.sh                # Strong scaling submission
+│   │   ├── submit_threads.sh               # Thread scaling submission
+│   │   └── submit_weak.sh                  # Weak scaling submission
 │   └── src/
 │       └── stencil_template_parallel.c # Hybrid MPI/OpenMP implementation
 ├── code-local/                         # Local development code
@@ -75,7 +91,7 @@ In order to reproduce the analysis on the cluster
 
 The program will save the results in `data/results.csv`.
 
-> Note: during the scaling study by default the print/save of the grid is suppressed by the preprocessor directive in order to have a clear time measurement of the program. It can be activated when compiling the code by setting `ENABLE_OUTPUT=1` in the `compile.sbatch` file.
+   > **Note:** During the scalability studies, grid printing and output generation are disabled by default via a preprocessor directive to ensure accurate and uncontaminated timing measurements. Output can be enabled at compile time by setting `ENABLE_OUTPUT=1` in the `compile.sbatch` file.
 
 ## Command Line Interface (CLI)
 
@@ -113,26 +129,11 @@ This section briefly describes the role of the main functions in the program.
     * allocation of data structures and communication buffers
     * initialization of heat sources
 
-* `memory_allocate(...)` allocates memory for:
+* `update_internal(...)` and `update_boundary(...)` execute the computational kernel of the **5-point stencil**, respectively for the internal grid points and the boundary grid points, i.e., those that depend on halo region data from neighboring MPI processes. 
 
-    * local computation planes (OLD/NEW)
-    * communication buffers used for halo exchanges
+* `output_energy_stat(...)` computes the total energy of the system or the avg energy per grid point, performing global reduction in MPI.
 
-* `initialize_sources(...)` distributes the global heat sources among MPI processes and initializes
-the local sources for each task.
-
-* `update_plane(...)` executes the computational kernel of the **5-point stencil**:
-
-    * update of the internal grid points
-    * OpenMP parallelization over the local domain
-
-* `exchange_borders(...)` manages MPI communication of boundary cells between neighboring processes (halo region exchanges). Manages MPI communication of boundary cells between neighboring processes
-(halo region exchanges).
-
-* `compute_energy(...)` computes the total energy of the system or the requested energy statistics, optionally performing global reductions.
-* `finalize(...)` releases allocated memory and finalizes the MPI execution.
-
-* The functions `dump`, `gather_global_plane`, and `dump_global` are used to produce visual output from the simulation. They support both local and global data dumping by collecting the distributed subdomains managed by MPI processes and reconstructing the global solution when needed. These routines are mainly intended for debugging, and visualization.
+* The functions `dump(...)`, `gather_global_plane(...)`, and `dump_global(...)` are used to produce visual output from the simulation. They support both local and global data dumping by collecting the distributed subdomains managed by MPI processes and reconstructing the global solution when needed. These routines are mainly intended for debugging, and visualization.
 
 ## Parallelization Strategy
 

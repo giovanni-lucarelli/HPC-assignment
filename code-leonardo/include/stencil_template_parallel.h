@@ -283,6 +283,3 @@ inline int get_total_energy( plane_t *plane, double *energy )
     *energy = (double)totenergy;
     return 0;
 }
-
-
-
