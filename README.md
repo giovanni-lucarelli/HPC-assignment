@@ -28,11 +28,10 @@ $$
 which leads to the following discrete update rule:
 
 $$
-u^{(t+1)}_{i,j} = (1 - 4\alpha)\,u^{(t)}_{i,j}
-+ \alpha \sum_{\langle i,j \rangle} u^{(t)}_{i,j}
+u^{(t+1)}_{i,j} = (1 - 4\alpha)\,u^{(t)}_{i,j} + \alpha \sum_{\langle i,j \rangle} u^{(t)}_{i,j}
 $$
 
-where $ i \in \{1, \dots, N_x-1\} $ and $ j \in \{1, \dots, N_y-1\} $
+where $i \in \{1, \dots, N_x-1\}$ and $j \in \{1, \dots, N_y-1\}$
 denote the internal grid points.
 
 The implementation supports both periodic and non-periodic boundary
