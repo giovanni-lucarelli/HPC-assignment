@@ -69,9 +69,6 @@ HPC-assignment/
 │   ├── strong_*.csv                    # Strong scaling results
 │   ├── threads_*.csv                   # Thread scaling results
 │   └── weak.csv                        # Weak scaling results
-├── doc/                                # Documentation
-│   ├── guide_serial.md                 # Serial implementation guide
-│   └── node_info.md                    # HPC node specifications
 ├── plot/                               # Jupyter notebooks for visualization
 │   ├── evolution-parallel.ipynb        # Parallel performance analysis
 │   ├── evolution-serial.ipynb          # Serial performance analysis
