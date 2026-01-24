@@ -784,10 +784,18 @@ int dump ( const double *data, const uint size[2], const char *filename, double 
 }
 
 static inline int block_size_1d(int S, int G, int X) {
+// S: total number of elements
+// G: number of tasks
+// X: rank of the task
+// returns: number of elements that belongs to process X
     int base = S / G, rem = S % G;
     return base + (X < rem);
 }
 static inline int block_offset_1d(int S, int G, int X) {
+// S: total number of elements
+// G: number of tasks
+// X: rank of the task
+// returns: index of the first element that belongs to process X
     int base = S / G, rem = S % G;
     return X * base + (X < rem ? X : rem);
 }
@@ -827,8 +835,10 @@ double* gather_global_plane(const plane_t *plane,
     int Sx = (int)S[_x_], Sy = (int)S[_y_];
 
     if (Rank == 0) {
-        recvcounts = (int*) malloc((size_t)Ntasks * sizeof(int));
+        recvcounts = (int*) malloc((size_t)Ntasks * sizeof(int)); 
+        // recvcounts[r] number of elements root task received from task r
         displs     = (int*) malloc((size_t)Ntasks * sizeof(int));
+        // displs[r] displacement in the buffer for the data received from task r
         if (!recvcounts || !displs) {
             free(localbuf);
             free(recvcounts); free(displs);
@@ -854,9 +864,17 @@ double* gather_global_plane(const plane_t *plane,
     }
 
     // 3) Gather the packed chunks to rank 0
-    MPI_Gatherv(localbuf, (int)local_size, MPI_DOUBLE,
-                gathered, recvcounts, displs, MPI_DOUBLE,
-                0, comm);
+    MPI_Gatherv(localbuf, // send buffer
+        (int)local_size, // number of elements to be gathered
+        MPI_DOUBLE, // send datatype
+        gathered, // recv buffer
+        recvcounts, // array[r] that tells the number of elems to be received from process r 
+        displs, // array[r] that tells the starting index in recv buffer for data of process r
+        MPI_DOUBLE, // recv datatype
+        0, // root
+        comm
+        );
+        
     free(localbuf);
 
     // 4) On rank 0, remap chunks into the correct 2D positions
